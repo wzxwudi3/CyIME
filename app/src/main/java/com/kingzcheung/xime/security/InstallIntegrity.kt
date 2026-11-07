@@ -24,7 +24,7 @@ object InstallIntegrity {
      * 换了老用户就无法覆盖升级）。以后 F-Droid 等商店若用自己的密钥重签，把它的证书加到这里。
      */
     internal val OFFICIAL_CERTS: Set<String> = setOf(
-        "e0d419cbfc7715e0be5bd98e7e5a26ab7d147a67b15d0961797197e6c76c05e2",
+        "e0d419cbfc7715e0be5bd98e7e5a26ab7d147a67b15d0961797197e6c76c05e2","96b89afa776c72164cafed502ea89947137c988842e989da71ba201e095febd3",
     )
 
     const val DOWNLOAD_URL = "https://github.com/Cyletix/CyIME/releases"
