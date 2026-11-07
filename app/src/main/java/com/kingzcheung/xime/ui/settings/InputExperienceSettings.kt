@@ -152,7 +152,7 @@ internal fun InputExperienceSettings(
                 Slider(value = percent.toFloat(), modifier = Modifier.testTag("clear-swipe-percent"),
                     onValueChange = { settings = settings.copy(clearSwipePercent =
                         com.kingzcheung.xime.ui.keyboard.normalizeClearSwipePercent(it)) },
-                    onValueChangeFinished = { settings.save(context) }, valueRange = 70f..120f, steps = 4)
+                    onValueChangeFinished = { settings.save(context) }, valueRange = 10f..120f, steps = 10)
                 Text("删除键${clearSwipe}清空、${undoSwipe}撤回要滑多远。默认标准。", style = MaterialTheme.typography.bodySmall)
             }
             divider()
