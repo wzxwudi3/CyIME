@@ -39,7 +39,7 @@ internal fun normalizeCornerHintOpacity(value: Float): Float =
 
 /** 删除键上下滑清空、撤回的距离：原来 80dp 的 70%–120%，每档 10%，默认 100%（11-05 别人提的需求，范围只够微调）。 */
 internal fun normalizeClearSwipePercent(value: Float): Float =
-    ((value.takeIf { it.isFinite() } ?: 100f).coerceIn(70f, 120f) / 10f).roundToInt() * 10f
+    ((value.takeIf { it.isFinite() } ?: 100f).coerceIn(10f, 120f) / 10f).roundToInt() * 10f
 
 /** 删除键上下滑要滑过的距离（dp）；100% 就是原来所有按键共用的 80dp。 */
 internal const val CLEAR_SWIPE_BASE_DP = 80f
