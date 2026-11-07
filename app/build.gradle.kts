@@ -96,7 +96,9 @@ android {
 
         // NDK 配置
         ndk {
-            abiFilters += listOf("arm64-v8a")
+            // ABI 由下面 splits.abi.include 决定；两处同时配置会报
+            // "Conflicting configuration ... ndk abiFilters cannot be present when splits abi filters are set"
+            // abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
         }
 
         // 构建信息
