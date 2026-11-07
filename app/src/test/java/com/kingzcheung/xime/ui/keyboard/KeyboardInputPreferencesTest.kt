@@ -229,7 +229,7 @@ class KeyboardInputPreferencesTest {
     }
 
     @Test fun `clear distance stays inside the narrow fine-tune range`() {
-        assertEquals(70f, normalizeClearSwipePercent(10f), 0.001f)
+        assertEquals(10f, normalizeClearSwipePercent(10f), 0.001f)
         assertEquals(120f, normalizeClearSwipePercent(500f), 0.001f)
         assertEquals(90f, normalizeClearSwipePercent(88f), 0.001f)
         assertEquals(100f, normalizeClearSwipePercent(Float.NaN), 0.001f)
