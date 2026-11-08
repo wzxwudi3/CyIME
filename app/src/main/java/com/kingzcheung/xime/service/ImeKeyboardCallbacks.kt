@@ -150,6 +150,7 @@ internal fun rememberImeKeyboardCallbacks(
                 service.keyRouter.selectAssociation(index)
             },
             onClearAssociation = {
+                service.predictionManager.invalidatePendingPredictions()
                 // 清空英文联想候选，并结束英文输入态：pendingEnglish 清空后，
                 // 后续刷新不再触发联想异步回填（否则"清了又冒出来"，见
                 // ImeSessionController/updateUIWithResult 的在途回填校验）。
@@ -240,10 +241,14 @@ internal fun rememberImeKeyboardCallbacks(
             },
             onDeleteKaomoji = service::deleteKaomojiBeforeCursor,
             onDeleteText = { count -> service.textCommit.deleteClipboardChars(count) },
-            onKeyboardResize = {
+            onKeyboardResize = resize@{
                 service.keyboardViewModel.closeOverlay()
                 val config = service.resources.configuration
                 val s = service.uiState.value
+                if (s.isFloatingMode && SettingsPreferences.floatingGeometryLocked(service)) {
+                    android.widget.Toast.makeText(service, "长按底部短横条 1 秒解锁，即可调整尺寸", android.widget.Toast.LENGTH_SHORT).show()
+                    return@resize
+                }
                 val currentSize = service.currentResolvedKeyboardSize ?: service.resolveKeyboardSize(
                     config.screenWidthDp, effectiveScreenH,
                     if (s.isFloatingMode) floatingMinY else s.keyboardBottomPaddingDp + service.keyboardBottomSpaceDp(s), s,

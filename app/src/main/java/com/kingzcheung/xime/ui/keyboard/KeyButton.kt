@@ -308,6 +308,7 @@ fun SwipeableKeyButton(
     swipeUpKeyLabel: String? = null,
     /** All corner-symbol keys use the same preference; dedicated icon actions are separate. */
     followSymbolSwipeDirection: Boolean = true,
+    keepSymbolSwipeOnLongPress: Boolean = false,
     /** Literal upper-hint input, independent of whether its visual hint is enabled. */
     symbolInputText: String? = null,
     onSwipe: ((String) -> Unit)? = null,
@@ -404,6 +405,8 @@ fun SwipeableKeyButton(
             letters[if (ctrlTapFraction[0] < 0.5f) 0 else 1].toString() else letters
         if (ctrlTargets?.ctrlTap(pick) != true) onClick()
     }
+    val reserveDragForGlide = (LocalLetterGlide.current && letterGroup?.singleOrNull()?.lowercaseChar()?.let { it in 'a'..'z' } == true) ||
+        (LocalT9GlideKeys.current != null && badgeText?.singleOrNull()?.let { it in '2'..'9' } == true)
     val gestureActions = if (flick != null) KeyGestureActions(
         // 拂动：方向固定对应字母，不随角标方向反转；数字等改为长按。
         text = text,
@@ -459,7 +462,7 @@ fun SwipeableKeyButton(
         onLongPressSelect = onLongPressSelect,
         longPressTimeoutMillis = longPressTimeoutMillis,
         onLongPressFeedback = { view.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS) },
-    ).withSymbolInput(symbolInputMode, symbolInputText).let {
+    ).withSymbolInput(symbolInputMode, symbolInputText, keepSymbolSwipeOnLongPress).let {
         if (followSymbolSwipeDirection) it.withSymbolSwipeDirection(inputPreferences.reverseSymbolSwipe) else it
     }
     val inputActions = LocalKeyboardInputActions.current
@@ -507,6 +510,8 @@ fun SwipeableKeyButton(
     val flickFade = rememberKeyFlickFade(flickPreview)
 
     val shiftTargets = LocalShiftSlideTargets.current
+    val dragSpace = LocalKeyDragSpace.current
+    var dragBounds by remember { mutableStateOf(Rect.Zero) }
     val shiftToken = remember { Any() }
     val maxShiftLetters = if (LocalFourteenKeyLayout.current) 2 else 1
     val shiftLetters = (letterGroup ?: text).takeIf { group ->
@@ -517,14 +522,14 @@ fun SwipeableKeyButton(
         onDispose { shiftTargets?.remove(shiftToken) }
     }
     androidx.compose.runtime.SideEffect {
-        if (ctrlShortcutLetter != null) shiftTargets?.putCtrl(shiftToken, ctrlShortcutLetter, buttonBounds)
-        else if (shiftLetters != null) shiftTargets?.put(shiftToken, shiftLetters, buttonBounds) { uppercase ->
+        if (ctrlShortcutLetter != null) shiftTargets?.putCtrl(shiftToken, ctrlShortcutLetter, dragBounds)
+        else if (shiftLetters != null) shiftTargets?.put(shiftToken, shiftLetters, dragBounds) { uppercase ->
             currentActions.onPress()
             try { currentLetterSelection?.invoke(uppercase) ?: currentActions.onTap() }
             finally { currentActions.onRelease() }
         } else shiftTargets?.remove(shiftToken)
     }
-    val shiftHovered = (shiftLetters != null || ctrlShortcutLetter != null) && shiftTargets?.hovered?.bounds?.center?.let(buttonBounds::contains) == true
+    val shiftHovered = (shiftLetters != null || ctrlShortcutLetter != null) && shiftTargets?.hovered?.bounds?.center?.let(dragBounds::contains) == true
     // 按住符号键当 Ctrl：单字母键换成快捷键键面（用户 10-24）；按满时限才换，渐变出来，松手立刻换回（用户 10-31）。
     // 九键数字键换成它代表的字母的用途，左上角写数字（用户 11-03）。
     val ctrlLetter = (ctrlShortcutLetter ?: shiftLetters?.singleOrNull())?.takeIf { shiftTargets?.ctrlFaces == true }
@@ -576,10 +581,11 @@ fun SwipeableKeyButton(
                     ctrlTapFraction[0] = if (size.width > 0) down.position.x / size.width else 0.5f
                 }
             } else Modifier)
-            .pointerInput(Unit) { detectExclusiveKeyGestures { currentActions } }
+            .pointerInput(reserveDragForGlide) { detectExclusiveKeyGestures(reserveDragForGlide) { currentActions } }
             .padding(edgeContentPadding)
             .onGloballyPositioned { coordinates ->
                 buttonBounds = coordinates.boundsInRoot()
+                if (shiftTargets != null) dragBounds = if (dragSpace.card == null) buttonBounds else dragSpace.bounds(coordinates)
                 letterGeometry?.place(text, buttonBounds)
             }
             .padding(scaledKeyVisualPadding())

@@ -69,6 +69,13 @@ internal fun LayoutInputSettingsContent(category: LayoutInputCategory, onBack: (
             when (category) {
                 LayoutInputCategory.Qwerty -> Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 // 邻键纠错、模糊音 11-01 搬到「语言与方案」（跟着方案走，九键和 26 键页不再各放一份）。
+                SettingsSection(title = "英文输入", content = {
+                    SettingsToggleItem(Icons.TwoTone.Abc, "英文句首自动大写",
+                        "英文输入时，新句子和新段落的第一个字母自动大写。",
+                        checked = settings.englishSentenceCaps, onCheckedChange = {
+                            settings = settings.copy(englishSentenceCaps = it); settings.save(context)
+                        })
+                })
                 SettingsSection(title = "混输", content = {
                     SettingsToggleItem(Icons.TwoTone.Abc, "中英混输",
                         "仅用于中文全拼 26 键；拼音里夹着英文词(nihaohello)时首选“你好hello”。本身像拼音的英文词(game、nice)认不出。",
@@ -79,7 +86,7 @@ internal fun LayoutInputSettingsContent(category: LayoutInputCategory, onBack: (
                 SettingsSection(title = "滑行", content = {
                     // 「键盘滑动」移光标和滑行冲突：照常显示，被锁时置灰并写明被谁锁（见 InputGestureLocks）。
                     SettingsToggleItem(Icons.TwoTone.Gesture, "滑行输入",
-                        "英文 26 键手指划过字母出整词，候选栏可换成其他词；竖着滑一行仍输入角标符号。",
+                        "英文 26 键手指划过字母出整词，候选栏可换成其他词；字母键向任何方向滑动都用于滑词，到相邻字母即可松手。",
                         checked = settings.glideTyping, onCheckedChange = {
                             settings = settings.copy(glideTyping = it); settings.save(context)
                         },
@@ -89,7 +96,7 @@ internal fun LayoutInputSettingsContent(category: LayoutInputCategory, onBack: (
                         costItem = com.kingzcheung.xime.settings.PerformanceCosts.Item.GLIDE_TYPING)
                     HorizontalDivider()
                     SettingsToggleItem(Icons.TwoTone.Gesture, "中文滑行输入",
-                        "中文全拼、双拼 26 键划一个词的拼音，接着划或点按都接在后面，照常选字；竖着滑一行仍输入角标符号。",
+                        "中文全拼、双拼 26 键划一个词的拼音，接着划或点按都接在后面，照常选字；字母键向任何方向滑动都用于滑词，到相邻字母即可松手。",
                         checked = settings.chineseGlideTyping, onCheckedChange = {
                             settings = settings.copy(chineseGlideTyping = it); settings.save(context)
                         },
@@ -113,6 +120,8 @@ internal fun LayoutInputSettingsContent(category: LayoutInputCategory, onBack: (
                         lockMessage = "需先打开「滑行输入」或「中文滑行输入」"
                             .takeIf { !settings.glidePreview && !settings.glideTyping && !settings.chineseGlideTyping },
                         costItem = com.kingzcheung.xime.settings.PerformanceCosts.Item.GLIDE_PREVIEW)
+                    HorizontalDivider()
+                    GlidePracticeItem(nine = false)
                 })
                 SettingsSection(title = "按键排列与分词", content = {
                     QwertyStaggerSettings(settings) { settings = it; it.save(context) }
@@ -134,16 +143,22 @@ internal fun LayoutInputSettingsContent(category: LayoutInputCategory, onBack: (
                             settings = settings.copy(qwertyPeriodKey = it); settings.save(context)
                         })
                     HorizontalDivider()
+                    SettingsToggleItem(Icons.TwoTone.Gesture, "底排标点固定上滑",
+                        "在空格两侧的逗号或句号键上滑，输入右上角的符号。关闭后跟随全局角标设置。",
+                        checked = settings.bottomPunctuationSwipeUp, onCheckedChange = {
+                            settings = settings.copy(bottomPunctuationSwipeUp = it); settings.save(context)
+                        })
+                    HorizontalDivider()
                     // 逗号键分词（默认关）：下角标的方向跟「反转上下滑方向」走，说明照实际方向写。
                     SettingsToggleItem(Icons.TwoTone.ContentCut, "逗号键分词",
                         "中文全拼、双拼的 26 键和 14 键：逗号键左下角加 '(只开句号键时在句号键上)，" +
-                            "打拼音时${if (settings.reverseSymbolSwipe) "下滑" else "上滑"}插入分词(xi'an)，F 键角标的 ' 也一样；" +
+                            "打拼音时${if (settings.bottomPunctuationSwipeUp || settings.reverseSymbolSwipe) "下滑" else "上滑"}插入分词(xi'an)，F 键的 ' 仍跟随字母键手势；" +
                             "没在打拼音时输入 '。九键照旧用 1 键分词。",
                         checked = settings.syllableSplitKey, onCheckedChange = {
                             settings = settings.copy(syllableSplitKey = it); settings.save(context)
                         })
                     SyllableSplitKeyLegend(settings.syllableSplitKey, settings.qwertyCommaKey, settings.qwertyPeriodKey,
-                        settings.reverseSymbolSwipe)
+                        settings.bottomPunctuationSwipeUp || settings.reverseSymbolSwipe)
                     HorizontalDivider()
                     SettingsToggleItem(Icons.TwoTone.ContentCut, "Shift 键分词",
                         "中文全拼、双拼的 26 键和 14 键：打拼音时 Shift 键写「分词」，点一下插入分词(xi'an)；" +
@@ -162,7 +177,7 @@ internal fun LayoutInputSettingsContent(category: LayoutInputCategory, onBack: (
                 LayoutInputCategory.Nine -> Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     SettingsSection(title = "九键手势", content = {
                         SettingsToggleItem(Icons.TwoTone.Gesture, "九键滑行输入",
-                            "一笔划过一个词的几个键，松手后按词库认出这笔划的是哪几个键，再照常选词：划 5→2→4 可以选“来”，从 9 直接划到 4 是 94，路过的键不算。",
+                            "一笔划过一个词的几个键，松手后按词库认出这笔划的是哪几个键，再照常选词：划 5→2→4 可以选“来”，从 9 直接划到 4 是 94，路过的键不算。开启后 2～9 键滑动只用于滑词。",
                             checked = settings.t9GlideTyping, onCheckedChange = {
                                 settings = settings.copy(t9GlideTyping = it); settings.save(context)
                             },
@@ -171,14 +186,18 @@ internal fun LayoutInputSettingsContent(category: LayoutInputCategory, onBack: (
                                 ?.takeIf { !settings.t9GlideTyping }?.message,
                             costItem = com.kingzcheung.xime.settings.PerformanceCosts.Item.T9_GLIDE)
                         HorizontalDivider()
+                        GlidePracticeItem(nine = true)
+                        HorizontalDivider()
+                        val glideLock = com.kingzcheung.xime.ui.keyboard.InputGestureLocks.lockFor(settings,
+                            com.kingzcheung.xime.ui.keyboard.InputGestureLock.Option.T9_FLICK_LETTERS, true)
                         SettingsToggleItem(Icons.TwoTone.OpenWith, "拂动选字母",
                             "左、上、右、下依次输入键上的第 1～4 个字母(7、9 用到下)，点按仍是九键输入；" +
                                 "开启后长按输入数字、不再弹出字母菜单。",
-                            checked = settings.t9FlickLetters, onCheckedChange = {
+                            checked = settings.t9FlickLetters && glideLock == null, onCheckedChange = {
                                 settings = settings.copy(t9FlickLetters = it); settings.save(context)
                             },
                             // 角标“长按”时数字占了长按，拂动必须开着：锁成开，不能关。
-                            lockMessage = com.kingzcheung.xime.ui.keyboard.InputGestureLocks.lockFor(settings,
+                            lockMessage = glideLock?.message ?: com.kingzcheung.xime.ui.keyboard.InputGestureLocks.lockFor(settings,
                                 com.kingzcheung.xime.ui.keyboard.InputGestureLock.Option.T9_FLICK_LETTERS, false)
                                 ?.takeIf { settings.t9FlickLetters }?.message)
                         HorizontalDivider()

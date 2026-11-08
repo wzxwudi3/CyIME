@@ -157,7 +157,12 @@ fun KeyboardView(
     dockTarget: KeyboardDockTarget? = null,
     onPreviewArrangePositioned: ((android.graphics.Rect) -> Unit)? = null,
     previewLetterLayout: Boolean = false,
+    // Older hosts can discard the separate window touch region when the lock moves into the footer.
+    onFloatingLockPositioned: ((android.graphics.Rect?) -> Unit)? = null,
 ) {
+    if (onFloatingLockPositioned != null) {
+        LaunchedEffect(onFloatingLockPositioned) { onFloatingLockPositioned(null) }
+    }
     // 状态栏按钮走一次完整按键反馈，声音和振动均由用户设置控制。
     val toolbarFeedback = { callbacks.onKeyPressDown?.invoke("toolbar"); Unit }
     // Docking defaults also depend on reloaded gaps when the visible size stays unchanged.
@@ -282,6 +287,7 @@ fun KeyboardView(
     val clipboardTab = (page as? KeyboardPage.Overlay)?.let {
         (it.route as? OverlayRoute.Clipboard)?.tab
     } ?: 0
+    val footerDp = LocalConfiguration.current.floatingFooterHeightDp
     val screenW = LocalConfiguration.current.screenWidthDp
     val screenH = LocalConfiguration.current.screenHeightDp
     val wideFloating = !isT9Schema(state.currentSchemaId) && state.inputProfile.layout.kind != com.kingzcheung.xime.settings.LayoutKind.KANA_KEYPAD && keyboardState !is KeyboardLayoutState.Stroke
@@ -351,7 +357,6 @@ fun KeyboardView(
         state.handwritingControlsWidthDp, state.handwritingControlsOffsetX, state.keyboardWidthDp, state.keyboardHeightDp)
     var cursorControlActive by remember { mutableStateOf(false) }
     val floatingBottomClearance = remember(state.isFloatingMode) { mutableFloatStateOf(0f) }
-    val floatingBottomVisualClearance = remember(state.isFloatingMode) { mutableFloatStateOf(0f) }
     // 上拉变悬浮后接着跟手：换模式时这一层不变，由它接着读手指。
     val undockFollow = remember { KeyboardUndockFollow() }
     CompositionLocalProvider(
@@ -361,7 +366,6 @@ fun KeyboardView(
         LocalDpPerMillimeter provides rememberDpPerMillimeter(),
         LocalSplitGapPreview provides splitGapPreview.takeIf { resizeActive },
         LocalFloatingBottomClearance provides if (state.isFloatingMode) floatingBottomClearance else null,
-        LocalFloatingBottomVisualClearance provides if (state.isFloatingMode) floatingBottomVisualClearance else null,
         com.kingzcheung.xime.ui.theme.LocalMaterialPalette provides
             com.kingzcheung.xime.ui.theme.MaterialPalette(keyboardBgColor, accentColor),
         LocalKeyboardExplicitWidth provides (state.keyboardWidthDp > 0 || (!state.isFloatingMode && (state.fixedWidthDp > 0 || resizeActive))),
@@ -426,7 +430,7 @@ fun KeyboardView(
     BoxWithConstraints(modifier = Modifier.undockFollowTracker(undockFollow).then(modifier).fillMaxSize()) {
         val hostWidthPx = with(resizeControlDensity) { maxWidth.toPx() }
         val hostHeightPx = with(resizeControlDensity) { maxHeight.toPx() }
-        val dragBarPx = with(resizeControlDensity) { FLOATING_DRAG_BAR_HEIGHT_DP.dp.toPx() }
+        val dragBarPx = with(resizeControlDensity) { footerDp.dp.toPx() }
 
         val hostLandscape = screenW > screenH
         val hostHeightDp = maxHeight.value.roundToInt().coerceAtLeast(1)
@@ -446,7 +450,7 @@ fun KeyboardView(
         val rotatedFloatingRect = if (state.isFloatingMode) floatingRotatedCardRect(hostWidthPx, hostHeightPx,
             normalFloatingRect.width, normalFloatingRect.height, state.floatingOffsetX.toFloat(),
             state.floatingOffsetY.toFloat(), state.floatingMinOffsetY.coerceAtLeast(0).toFloat(),
-            state.floatingRotation, resizeControlDensity.density) else null
+            state.floatingRotation, resizeControlDensity.density, footerDp) else null
         val seedPreviewRect = if (state.isFloatingMode) rotatedFloatingRect ?: normalFloatingRect else fixedKeyboardRect(
             hostWidthPx, hostHeightPx,
             state.keyboardHeightDp * resizeControlDensity.density,
@@ -511,7 +515,6 @@ fun KeyboardView(
             state.clipboardSearchInline),
         bottomContentPaddingDp = renderedBottomPaddingDp,
         bottomKeyClearance = floatingBottomClearance,
-        bottomKeyVisualClearance = floatingBottomVisualClearance,
         fixedWidthDp = state.fixedWidthDp,
         fixedOffsetX = state.fixedOffsetX,
         resolvedWidthDp = state.keyboardWidthDp,
@@ -838,11 +841,20 @@ fun KeyboardView(
             val showHandwritingCandidates = isHandwritingPage && handwritingCandidates.isNotEmpty()
             // 中文手写候选的注释是读音（带声调），忘了读音的字写出来对一下；释义模式下也显示读音。
             val handwritingChinese = isHandwritingPage && state.inputProfile.language == InputLanguage.CHINESE
-            LaunchedEffect(handwritingChinese) {
-                if (handwritingChinese) com.kingzcheung.xime.handwriting.HanziPinyin.load(handwritingContext)
+            val wubiHints = handwritingChinese && inputPreferences.handwritingWubiHints &&
+                state.inputProfile.scheme in setOf(com.kingzcheung.xime.settings.InputScheme.WUBI,
+                    com.kingzcheung.xime.settings.InputScheme.WUBI_PINYIN)
+            LaunchedEffect(handwritingChinese, wubiHints) {
+                if (handwritingChinese && !wubiHints) com.kingzcheung.xime.handwriting.HanziPinyin.load(handwritingContext)
             }
             val hanziPinyinRevision = com.kingzcheung.xime.handwriting.HanziPinyin.revision
-            val handwritingComments = remember(handwritingCandidates, handwritingChinese, hanziPinyinRevision) {
+            val handwritingComments = if (wubiHints) androidx.compose.runtime.key(state.currentSchemaId, handwritingCandidates) {
+                androidx.compose.runtime.produceState<List<String>>(emptyList()) {
+                    if (handwritingCandidates.isNotEmpty()) value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        com.kingzcheung.xime.rime.RimeEngine.getInstance().currentSchemeCodes(state.currentSchemaId, handwritingCandidates)
+                    }
+                }.value
+            } else remember(handwritingCandidates, handwritingChinese, hanziPinyinRevision) {
                 if (handwritingChinese) com.kingzcheung.xime.handwriting.HanziPinyin.comments(handwritingCandidates) else emptyList()
             }
 
@@ -1116,6 +1128,9 @@ fun KeyboardView(
                         viewModel.setCandidatePageExpanded(false)
                         if (showHandwritingCandidates) {
                             clearHandwriting()
+                        } else if (candidateBarState is CandidateBarState.AssociationOnly &&
+                            cs.pendingEnglishText.isEmpty() && callbacks.onClearAssociation != null) {
+                            callbacks.onClearAssociation.invoke()
                         } else {
                             callbacks.onKeyPress("clear_composition", false)
                         }
@@ -2103,13 +2118,12 @@ fun KeyboardView(
                         onKeyPressDown = callbacks.onKeyPressDown,
                         isFloatingMode = state.isFloatingMode,
                         onSelectExact = { symbol ->
-                            onHapticFeedback?.invoke()
                             (callbacks.onCommitExactText ?: callbacks.onCommitText)?.invoke(symbol)
                         },
                         onSelect = { symbol ->
-                            onHapticFeedback?.invoke()
                             // 删除键的清空、撤回同其他键盘（11-05「部分页面的删除键功能缺失」）。
                             if (symbol == "delete" || symbol == "clear_all" || symbol == "undo_clear") {
+                                onHapticFeedback?.invoke()
                                 callbacks.onKeyPress(symbol, false)
                             } else {
                                 callbacks.onCommitText?.invoke(symbol)

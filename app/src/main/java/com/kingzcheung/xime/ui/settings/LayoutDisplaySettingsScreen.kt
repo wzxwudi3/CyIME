@@ -50,6 +50,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.foundation.selection.toggleable
@@ -122,7 +123,7 @@ private fun LayoutDisplayPage(
             }
             if (page == null) item {
                 SettingsSection(title = "布局与符号", content = {
-                    SettingsItem(Icons.TwoTone.DashboardCustomize, "自定义布局", "新建、复制和编辑按键排列",
+                    SettingsItem(Icons.TwoTone.DashboardCustomize, "布局管理", "显示或排列切换栏里的布局，编辑自定义按键排列",
                         onClick = { context.startActivity(android.content.Intent(context, com.kingzcheung.xime.CustomLayoutActivity::class.java)) },
                         showArrow = true)
                     HorizontalDivider(Modifier.padding(horizontal = 16.dp))
@@ -455,6 +456,14 @@ private fun LayoutDisplayPage(
                             Switch(checked = associationCancelCross, onCheckedChange = null)
                         }
                     }
+                    val pressPrefs = remember(context) { SettingsPreferences.getPrefsPublic(context) }
+                    var pressHighlight by remember { mutableStateOf(
+                        pressPrefs.getBoolean(SettingsPreferences.KEY_CANDIDATE_PRESS_HIGHLIGHT, false)) }
+                    SettingsToggleItem(Icons.TwoTone.FormatColorFill, "候选栏按钮按压高亮",
+                        "按住取消键或展开箭头时，加深浅色底板或提亮深色底板。", pressHighlight, {
+                            pressHighlight = it
+                            pressPrefs.edit().putBoolean(SettingsPreferences.KEY_CANDIDATE_PRESS_HIGHLIGHT, it).apply()
+                        })
                 })
             }
             if (page == "candidates") item {
@@ -463,7 +472,7 @@ private fun LayoutDisplayPage(
                     Column(Modifier.settingsSearchAnchor("候选注释")) {
                         Text("候选注释", style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Medium, modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp))
-                        Text("自动：宽时显示、窄时隐藏，手写里照样显示。中文手写的注释总是读音。",
+                        Text("自动：宽时显示、窄时隐藏，手写里照样显示。中文手写默认显示读音。",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 16.dp))
                         Row(Modifier.fillMaxWidth().choiceCardRowHeight(136.dp).padding(horizontal = 16.dp),
@@ -488,6 +497,13 @@ private fun LayoutDisplayPage(
 
                     // 注释隐藏时内容选项无意义：整段不显示，也不会触发释义词典下载。
                     if (commentMode != com.kingzcheung.xime.settings.CandidateCommentMode.HIDE) {
+                        val prefs = SettingsPreferences.getPrefsPublic(context)
+                        var wubiHints by remember { mutableStateOf(prefs.getBoolean(SettingsPreferences.KEY_HANDWRITING_WUBI_HINTS, false)) }
+                        SettingsToggleItem(Icons.TwoTone.FormatColorFill, "手写候选显示五笔编码",
+                            "使用五笔方案时显示该方案的编码，切回拼音时显示读音。", wubiHints, {
+                                wubiHints = it
+                                prefs.edit().putBoolean(SettingsPreferences.KEY_HANDWRITING_WUBI_HINTS, it).apply()
+                            })
                         var commentContent by remember { mutableStateOf(SettingsPreferences.candidateCommentContent(context)) }
                         Column(Modifier.settingsSearchAnchor("候选注释内容")) {
                             Text("候选注释内容", style = MaterialTheme.typography.bodyLarge,
@@ -650,18 +666,17 @@ private fun LayoutDisplayPage(
 
 /** 普通 Activity 中的校准入口，底边手势被系统拦走时仍可点按。 */
 @Composable
-private fun FixedBottomCalibrationSettings() {
+internal fun FixedBottomCalibrationSettings() {
     val context = LocalContext.current
-    var edge by remember(context) { mutableStateOf(SettingsPreferences.edgeToEdgeKeyboard(context)) }
-    var adjustment by remember(context) { mutableIntStateOf(SettingsPreferences.getKeyboardBottomAdjustmentDp(context)) }
-    var loweringLimit by remember(context) { mutableStateOf(SettingsPreferences.getKeyboardBottomLoweringLimitDp(context)) }
-    DisposableEffect(context) {
+    val orientation = LocalConfiguration.current.orientation
+    val direction = if (orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) "横屏" else "竖屏"
+    var edge by remember(context, orientation) { mutableStateOf(SettingsPreferences.edgeToEdgeKeyboard(context)) }
+    var adjustment by remember(context, orientation) { mutableIntStateOf(SettingsPreferences.getKeyboardBottomAdjustmentDp(context)) }
+    var loweringLimit by remember(context, orientation) { mutableStateOf(SettingsPreferences.getKeyboardBottomLoweringLimitDp(context)) }
+    DisposableEffect(context, orientation) {
         val prefs = SettingsPreferences.getPrefsPublic(context)
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == SettingsPreferences.KEY_EDGE_TO_EDGE_KEYBOARD ||
-                key == SettingsPreferences.KEY_KEYBOARD_BOTTOM_PADDING_DP || key == SettingsPreferences.KEY_KEYBOARD_BOTTOM_LOWERING_DP ||
-                key == SettingsPreferences.KEY_KEYBOARD_BOTTOM_LOWERING_LIMIT_DP ||
-                key == SettingsPreferences.KEY_KEYBOARD_BOTTOM_EDGE_LOWERING_DP) {
+            if (SettingsPreferences.affectsBottomCalibration(context, key, includeMeasuredLimit = true)) {
                 edge = SettingsPreferences.edgeToEdgeKeyboard(context)
                 adjustment = SettingsPreferences.getKeyboardBottomAdjustmentDp(context)
                 loweringLimit = SettingsPreferences.getKeyboardBottomLoweringLimitDp(context)
@@ -671,24 +686,23 @@ private fun FixedBottomCalibrationSettings() {
         onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
     }
     // 调低最多到安全下限（键盘量过才知道；没量过仍按 80 dp）：到了下限按钮变灰，数字也不再往下走。
-    // 贴底时从贴底位置还能再调低 80 dp（键盘那边到 0 为止），识别不出手势导航的手机也能自己去掉底下那段。
-    val lowest = if (edge) -80 else -(loweringLimit ?: 80).coerceIn(0, 80)
+    val lowest = -(loweringLimit ?: 80)
     val value = adjustment.coerceAtLeast(lowest)
-    val reference = if (edge) "安全下限" else "系统建议"
+    val reference = if (edge) "贴底位置" else "系统建议"
     val position = when {
-        value == 0 -> if (edge) "已选安全下限" else "使用系统建议"
+        value == 0 -> if (edge) "使用贴底位置" else "使用系统建议"
         value > 0 -> "从${reference}抬高 ${value} dp"
         else -> "从${reference}调低 ${-value} dp"
     }
     SettingsSection("固定键盘") {
         SettingsToggleItem(Icons.TwoTone.Keyboard, "手势导航时键盘贴底",
-            "忽略系统给的底部边衬区，固定键盘贴到屏幕底边；三键导航和任务栏照常占位。",
+            "只有手势条时，固定键盘可贴到屏幕底边。底部有系统按钮或任务栏时，末排停在它们上方。",
             checked = edge, onCheckedChange = { SettingsPreferences.setEdgeToEdgeKeyboard(context, it) },
             lockMessage = if (android.os.Build.VERSION.SDK_INT < 29) "需要 Android 10 或以上" else null)
         HorizontalDivider(Modifier.padding(horizontal = 16.dp))
         Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(position, style = MaterialTheme.typography.titleSmall)
-            Text("固定键盘下方空白太多就调低，底排被遮住就抬高。每次 2 dp，点按即保存。",
+            Text("当前调整${direction}留白，每次 2 dp。旋转屏幕可单独调整另一个方向。",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedButton(onClick = { SettingsPreferences.setKeyboardBottomAdjustmentDp(context, (value - 2).coerceAtLeast(lowest)) },
@@ -720,65 +734,7 @@ internal fun KeyboardAppearanceSettings() {
                 SettingsSection(title = "角标与气泡", content = {
                     // 11-01：去掉和「双拼键位提示」的互锁和「和角标一起显示」开关；都开着时键面自动分层（KeyButton 的 dpWithCorners）。
                     val keyPrefs = com.kingzcheung.xime.ui.keyboard.rememberKeyboardInputPreferences()
-                    var swipeUpEnabled by remember {
-                        mutableStateOf(SettingsPreferences.isSwipeUpHintsEnabled(context))
-                    }
-                    Row(
-                        modifier = Modifier.settingsSearchAnchor("上方角标提示")
-                            .fillMaxWidth()
-                            .toggleable(value = swipeUpEnabled, role = Role.Switch) {
-                                swipeUpEnabled = it
-                                SettingsPreferences.setSwipeUpHintsEnabled(context, it)
-                            }
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "上方角标提示",
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = "按键右上角的小符号",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(checked = swipeUpEnabled, onCheckedChange = null)
-                    }
-                    HorizontalDivider(
-                        modifier = Modifier.padding(start = 16.dp),
-                        thickness = 0.5.dp,
-                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-                    )
-                    var swipeDownEnabled by remember {
-                        mutableStateOf(SettingsPreferences.isSwipeDownHintsEnabled(context))
-                    }
-                    Row(
-                        modifier = Modifier.settingsSearchAnchor("下方角标提示")
-                            .fillMaxWidth()
-                            .toggleable(value = swipeDownEnabled, role = Role.Switch) {
-                                swipeDownEnabled = it
-                                SettingsPreferences.setSwipeDownHintsEnabled(context, it)
-                            }
-                            .padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "下方角标提示",
-                                style = MaterialTheme.typography.bodyLarge,
-                                fontWeight = FontWeight.Medium
-                            )
-                            Text(
-                                text = "按键左下角的小符号",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Switch(checked = swipeDownEnabled, onCheckedChange = null)
-                    }
+                    CornerHintVisibilitySettings(Modifier.padding(16.dp))
                     HorizontalDivider(
                         modifier = Modifier.padding(start = 16.dp),
                         thickness = 0.5.dp,
@@ -839,7 +795,7 @@ internal fun KeyboardAppearanceSettings() {
                             modifier = Modifier.testTag("corner-hint-opacity")
                         )
                         // 图例：上面三个开关和这里的不透明度一起实时变化；怎么输入角标在「按键与手势」。
-                        KeyFaceHintsLegend(swipeUpEnabled, swipeDownEnabled, keyPrefs.doublePinyinKeyHints, cornerOpacity)
+                        KeyFaceHintsLegend(keyPrefs.swipeUpHints, keyPrefs.swipeDownHints, keyPrefs.doublePinyinKeyHints, cornerOpacity)
                         SettingsNote("角标怎么输入(滑动还是长按)在「按键与手势 › 按键角标的符号和数字」",
                             jumps = listOf("按键与手势 › 按键角标的符号和数字"))
                     }
