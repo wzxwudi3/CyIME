@@ -1,7 +1,6 @@
 package com.kingzcheung.xime.ui.settings
 
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Backspace
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.foundation.layout.*
@@ -14,6 +13,7 @@ import com.kingzcheung.xime.ui.keyboard.normalizeHandwritingPause
 import com.kingzcheung.xime.ui.keyboard.normalizeCursorHoldSeconds
 import com.kingzcheung.xime.ui.keyboard.normalizeLanguageMenuHoldSeconds
 import com.kingzcheung.xime.ui.keyboard.normalizeSymbolKeyHoldSeconds
+import com.kingzcheung.xime.ui.keyboard.normalizeSymbolLongPressSeconds
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -74,24 +74,44 @@ internal fun InputExperienceSettings(
             Column(Modifier.settingsSearchAnchor("按键角标的符号和数字", bleed = 16.dp, bleedVertical = 6.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("按键角标的符号和数字", style = MaterialTheme.typography.titleSmall)
                 val corner = com.kingzcheung.xime.ui.keyboard.CornerInputChoice.of(settings)
+                // 26 键滑行开着时角标的滑动输入用不了：两张「滑动」卡置灰，下面写明是哪个滑行锁的，点名字跳过去关掉。
+                val glideLock = com.kingzcheung.xime.ui.keyboard.InputGestureLocks.glideCornerLock(settings)
+                // 图例跟上面两个角标提示开关走（用户 11-08）：关掉的角标不画、不列。
+                val hints = com.kingzcheung.xime.ui.keyboard.rememberSwipeHintsEnabled()
                 Row(Modifier.fillMaxWidth().choiceCardRowHeight(176.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     com.kingzcheung.xime.ui.keyboard.CornerInputChoice.entries.forEach { choice ->
                         IllustratedChoiceCard(choice.label, corner == choice,
                             onClick = { settings = choice.applyTo(settings); settings.save(context) },
+                            enabled = glideLock == null || choice == com.kingzcheung.xime.ui.keyboard.CornerInputChoice.LONG_PRESS,
                             modifier = Modifier.weight(1f).then(if (choice == com.kingzcheung.xime.ui.keyboard.CornerInputChoice.SWIPE_BUBBLE)
                                 Modifier.settingsSearchAnchor("长按弹出字母气泡") else Modifier),
                             tag = "corner-input:${choice.name}", titleMaxLines = 2, illustrationPadding = 2.dp) {
-                            CornerInputIllustration(choice, settings.reverseSymbolSwipe)
+                            CornerInputIllustration(choice, settings.reverseSymbolSwipe, hints.up, hints.down)
                         }
                     }
                 }
+                // 说明跟选中的方式和角标提示开关走（用户 11-08）：方向已画在卡片里，这里只补卡片表达不了的。
+                val hiddenNote = if (hints.up && hints.down) "" else "关掉提示的角标键上不显示，手势照样输入。"
                 Text(when (corner) {
                     com.kingzcheung.xime.ui.keyboard.CornerInputChoice.SWIPE -> "滑动时键内预览，松手输入。"
                     com.kingzcheung.xime.ui.keyboard.CornerInputChoice.SWIPE_BUBBLE ->
                         "长按弹出这个字母的大写和带声调的写法；滑得慢时可能先弹出气泡。"
                     com.kingzcheung.xime.ui.keyboard.CornerInputChoice.LONG_PRESS ->
-                        "按住 0.3 秒输入上方角标。九键长按出数字，选字母改用拂动。西班牙语的元音和 n 长按仍出 á é ñ，它们的上角标改用滑动。"
-                }, style = MaterialTheme.typography.bodySmall)
+                        "按住 ${symbolLongPressLabel(settings.symbolLongPressSeconds)} 秒立刻输入上方角标，不用松手；气泡显示输入的角标，松手消失。" +
+                            "九键长按出数字，选字母改用拂动。西班牙语的元音和 n 长按仍出 á é ñ，它们的上角标改用滑动。"
+                } + hiddenNote, style = MaterialTheme.typography.bodySmall)
+                glideLock?.let { SettingsLockNote("${it.message}：字母键的滑动都用来滑词，角标改为长按输入") }
+                // 只在「长按输入」（含被滑行锁成长按）时有用，这时才显示（用户 11-08：关闭角标滑动后要能调长按时间）。
+                if (corner == com.kingzcheung.xime.ui.keyboard.CornerInputChoice.LONG_PRESS) {
+                    // 搜索「长按时间」等落到上面「按键角标的符号和数字」（SettingsSearch 的关键词），不单设锚点：没选长按时这里不显示。
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("长按多久输入角标：${symbolLongPressLabel(settings.symbolLongPressSeconds)} 秒")
+                        Text("默认 0.3 秒。26、14 键，九键和笔画都用这个时长。", style = MaterialTheme.typography.bodySmall)
+                        Slider(value = settings.symbolLongPressSeconds, modifier = Modifier.testTag("symbol-long-press-slider"),
+                            onValueChange = { settings = settings.copy(symbolLongPressSeconds = normalizeSymbolLongPressSeconds(it)) },
+                            onValueChangeFinished = { settings.save(context) }, valueRange = 0.1f..1f, steps = 17)
+                    }
+                }
             }
             Row(Modifier.settingsSearchAnchor("反转上下滑方向", bleed = 16.dp, bleedVertical = 6.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -189,13 +209,7 @@ internal fun InputExperienceSettings(
                 ClearBeforeCursorLegend(settings.clearBeforeCursorOnly, settings.deleteSwipeReversed)
             }
             // 下面两项存在 SettingsPreferences（原在「智能联想 › 联想行为」），值不变，只是换了地方。
-            var clearSkipsAssociation by remember { mutableStateOf(SettingsPreferences.clearSwipeSkipsAssociation(context)) }
-            divider()
-            SettingsToggleItem(Icons.AutoMirrored.Filled.Backspace, "滑动清空时跳过联想",
-                "只剩联想词时，一次清空手势就按已选范围删除正文。关闭时先收起联想。", clearSkipsAssociation, {
-                    clearSkipsAssociation = it
-                    SettingsPreferences.setClearSwipeSkipsAssociation(context, it)
-                })
+            // 原「滑动清空时跳过联想」（11-08 用户删掉）并进「退格直接删字」：一个开关同时管退格和滑动清空，旧值由 SettingsPreferences 迁过来。
             var deleteSkipsAssociation by remember { mutableStateOf(SettingsPreferences.isDeleteSkipsAssociation(context)) }
             var deleteRecovery by remember { mutableStateOf(SettingsPreferences.isDeleteRecovery(context)) }
             val predictionOn = remember { SettingsPreferences.isSmartPredictionEnabled(context) }
@@ -205,7 +219,8 @@ internal fun InputExperienceSettings(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("退格直接删字", style = MaterialTheme.typography.titleSmall)
-                        Text("候选栏有联想词时，第一下退格就删字，不用先收起联想。", style = MaterialTheme.typography.bodySmall)
+                        Text("有联想词时，退格直接删字，${clearSwipe}清空直接清正文；关掉时第一下只去掉联想词。",
+                            style = MaterialTheme.typography.bodySmall)
                         if (!predictionOn) Text("「智能联想」关着，没有联想词，这项不起作用。",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -222,7 +237,7 @@ internal fun InputExperienceSettings(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text("删字后给同音字", style = MaterialTheme.typography.titleSmall)
-                        Text("退格删掉一个字后，候选栏放回这个字和它的同音字，删错或打错了点一下改过来。",
+                        Text("退格删字后，候选栏显示删掉的字和它的同音字(点一下上屏)。",
                             style = MaterialTheme.typography.bodySmall)
                         PerformanceCostNote(com.kingzcheung.xime.settings.PerformanceCosts.Item.DELETE_RECOVERY)
                     }
@@ -481,3 +496,7 @@ internal fun InputExperienceSettings(
         }
     })
 }
+
+/** 0.3、0.25、1：去掉多余的 0。 */
+internal fun symbolLongPressLabel(seconds: Float): String =
+    String.format(java.util.Locale.ROOT, "%.2f", normalizeSymbolLongPressSeconds(seconds)).trimEnd('0').trimEnd('.')

@@ -105,7 +105,8 @@ object SettingsPreferences {
     
     const val KEY_SMART_PREDICTION_ENABLED = "smart_prediction_enabled"
     private const val KEY_SPACE_COMMIT_ASSOCIATION = "space_commit_association"
-    private const val KEY_ASSOCIATION_SINGLE_MODE = "association_single_mode"
+    internal const val KEY_ASSOCIATION_SINGLE_MODE = "association_single_mode"
+    /** 已删的「滑动清空时跳过联想」，只留着给 isDeleteSkipsAssociation 迁移旧值。 */
     private const val KEY_CLEAR_SWIPE_SKIPS_ASSOCIATION = "clear_swipe_skips_association"
     private const val KEY_DELETE_SKIPS_ASSOCIATION = "delete_skips_association"
     private const val KEY_DELETE_RECOVERY = "delete_recovery_candidates"
@@ -837,7 +838,7 @@ object SettingsPreferences {
 
     /**
      * 联想模式：false = 连续联想（联想上屏后继续推理，可连续上屏），true = 单次联想（只推理一次）。
-     * 默认单次；保留用户明确选择的连续模式。
+     * 没存过值时算单次（老用户照旧）；2026-11-08 起新装由 [com.kingzcheung.xime.model.DeviceDefaults] 写入连续。
      */
     fun isSingleAssociationMode(context: Context): Boolean {
         return getPrefs(context).getBoolean(KEY_ASSOCIATION_SINGLE_MODE, true)
@@ -848,18 +849,23 @@ object SettingsPreferences {
     }
 
     /**
-     * 退格直接删字（B站反馈 10-31，别人的需求，默认关）：联想词出现时退格直接删掉刚上屏的字、顺手收起联想，
-     * 不用先按一下收起联想。关着时照旧：第一下收起联想，第二下才删字。
+     * 退格直接删字（B站反馈 10-31，别人的需求，默认关）：联想词出现时退格直接删掉刚上屏的字、顺手去掉联想词，
+     * 滑动清空也直接按已选范围清正文。关着时照旧：第一下只去掉联想词，第二下才删字或清空。
+     *
+     * 原「滑动清空时跳过联想」（默认关）11-08 被用户删掉，并进这一项：旧值是开的，第一次读时把这一项打开，
+     * 并删掉旧键，之后只看这一项。没开过旧项的人不受影响，默认值不变。
      */
-    fun clearSwipeSkipsAssociation(context: Context): Boolean =
-        getPrefs(context).getBoolean(KEY_CLEAR_SWIPE_SKIPS_ASSOCIATION, false)
-
-    fun setClearSwipeSkipsAssociation(context: Context, enabled: Boolean) {
-        getPrefs(context).edit().putBoolean(KEY_CLEAR_SWIPE_SKIPS_ASSOCIATION, enabled).apply()
+    fun isDeleteSkipsAssociation(context: Context): Boolean {
+        val prefs = getPrefs(context)
+        if (prefs.contains(KEY_CLEAR_SWIPE_SKIPS_ASSOCIATION)) {
+            val oldOn = prefs.getBoolean(KEY_CLEAR_SWIPE_SKIPS_ASSOCIATION, false)
+            val edit = prefs.edit().remove(KEY_CLEAR_SWIPE_SKIPS_ASSOCIATION)
+            if (oldOn) edit.putBoolean(KEY_DELETE_SKIPS_ASSOCIATION, true)
+            edit.apply()
+            if (oldOn) return true
+        }
+        return prefs.getBoolean(KEY_DELETE_SKIPS_ASSOCIATION, false)
     }
-
-    fun isDeleteSkipsAssociation(context: Context): Boolean =
-        getPrefs(context).getBoolean(KEY_DELETE_SKIPS_ASSOCIATION, false)
 
     fun setDeleteSkipsAssociation(context: Context, enabled: Boolean) {
         getPrefs(context).edit().putBoolean(KEY_DELETE_SKIPS_ASSOCIATION, enabled).apply()
@@ -1190,43 +1196,52 @@ object SettingsPreferences {
     const val KEY_KEYBOARD_BOTTOM_PADDING_DP = "keyboard_bottom_padding_dp"
     internal const val KEY_KEYBOARD_BOTTOM_LOWERING_DP = "keyboard_bottom_lowering_dp"
     const val KEY_EDGE_TO_EDGE_KEYBOARD = "edge_to_edge_keyboard"
-    internal const val KEY_KEYBOARD_BOTTOM_EDGE_LOWERING_DP = "keyboard_bottom_edge_lowering_dp"
-    internal const val KEY_KEYBOARD_BOTTOM_LOWERING_LIMIT_DP = "keyboard_bottom_lowering_limit_dp"
-    private const val KEY_KEYBOARD_EDGE_LOWERING_LIMIT_DP = "keyboard_bottom_edge_lowering_limit_dp"
-
-    private fun bottomCalibrationSuffix(context: Context): String =
-        if (context.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE)
-            "_landscape" else "_portrait"
-
-    internal fun affectsBottomCalibration(context: Context, key: String?, includeMeasuredLimit: Boolean = false): Boolean =
-        when (key?.removeSuffix(bottomCalibrationSuffix(context))) {
-            null, KEY_EDGE_TO_EDGE_KEYBOARD, KEY_KEYBOARD_BOTTOM_PADDING_DP,
-            KEY_KEYBOARD_BOTTOM_LOWERING_DP, KEY_KEYBOARD_BOTTOM_EDGE_LOWERING_DP -> true
-            KEY_KEYBOARD_BOTTOM_LOWERING_LIMIT_DP, KEY_KEYBOARD_EDGE_LOWERING_LIMIT_DP -> includeMeasuredLimit
-            else -> false
-        }
-
-    // 两个方向分别继承升级前的手动值；以后只写有方向的字段，先调哪一边都不会改掉另一边的起点。
-    private fun bottomCalibrationDp(context: Context, key: String): Int {
-        val prefs = getPrefs(context)
-        return prefs.getInt(key + bottomCalibrationSuffix(context), prefs.getInt(key, 0)).coerceAtLeast(0)
-    }
 
     /**
      * 「手势导航时键盘贴底」默认开（11-03 用户「这个必须得给我解决了 拖了好几个版本」：手势导航下键盘底下那段默认就该没有）。
      * 没动过这项的老用户也跟着开；自己关掉过的（存了 false）照旧关着。三键导航和任务栏不受它影响。
      */
-    fun edgeToEdgeKeyboard(context: Context): Boolean {
-        val prefs = getPrefs(context)
-        return prefs.getBoolean(KEY_EDGE_TO_EDGE_KEYBOARD + bottomCalibrationSuffix(context),
-            prefs.getBoolean(KEY_EDGE_TO_EDGE_KEYBOARD, true))
-    }
+    fun edgeToEdgeKeyboard(context: Context): Boolean =
+        getPrefs(context).getBoolean(KEY_EDGE_TO_EDGE_KEYBOARD, true)
 
     fun setEdgeToEdgeKeyboard(context: Context, enabled: Boolean) {
-        getPrefs(context).edit().putBoolean(KEY_EDGE_TO_EDGE_KEYBOARD + bottomCalibrationSuffix(context), enabled).apply()
+        getPrefs(context).edit().putBoolean(KEY_EDGE_TO_EDGE_KEYBOARD, enabled).apply()
     }
 
-    fun getKeyboardBottomPaddingDp(context: Context): Int = bottomCalibrationDp(context, KEY_KEYBOARD_BOTTOM_PADDING_DP)
+    /**
+     * 「底部位置」（用户 11-08：贴底改了多少版都有人说坏了，给几个简单选项）：
+     * 自动 = 1.15.66 的贴底算法原样不动；贴到最底 = 不给导航按钮留位（全面屏隐藏了切换键盘、收起键盘按钮的机型）；
+     * 留出导航按钮 = 整条导航栏都留着，键盘不盖住也不被那两个按钮盖住。原「手势导航时键盘贴底」开关并进这里：
+     * 没选过时，关过贴底的老用户算「留出导航按钮」，其余算「自动」。
+     */
+    enum class KeyboardBottomPosition(val label: String, val description: String) {
+        AUTO("自动", "按导航方式自动判断，1.15.66 的贴底效果。"),
+        FLUSH("贴到最底", "不给导航按钮留位，键盘一直贴到屏幕底边。适合隐藏了切换输入法、收起键盘按钮的全面屏。"),
+        KEEP_BUTTONS("留出导航按钮", "整条导航栏都留着：底下有切换输入法、收起键盘按钮时，键盘不盖住它们，也不被它们盖住。"),
+    }
+
+    const val KEY_KEYBOARD_BOTTOM_POSITION = "keyboard_bottom_position"
+
+    fun keyboardBottomPosition(context: Context): KeyboardBottomPosition {
+        val prefs = getPrefs(context)
+        prefs.getString(KEY_KEYBOARD_BOTTOM_POSITION, null)?.let { stored ->
+            KeyboardBottomPosition.entries.firstOrNull { it.name == stored }?.let { return it }
+        }
+        return if (!prefs.getBoolean(KEY_EDGE_TO_EDGE_KEYBOARD, true)) KeyboardBottomPosition.KEEP_BUTTONS
+            else KeyboardBottomPosition.AUTO
+    }
+
+    /** 选一档同时写贴底开关：自动和贴到最底按贴底算（调低从贴底位置往下），留出导航按钮按不贴底算。 */
+    fun setKeyboardBottomPosition(context: Context, position: KeyboardBottomPosition) {
+        getPrefs(context).edit().putString(KEY_KEYBOARD_BOTTOM_POSITION, position.name)
+            .putBoolean(KEY_EDGE_TO_EDGE_KEYBOARD, position != KeyboardBottomPosition.KEEP_BUTTONS).apply()
+    }
+
+    private const val DEFAULT_KEYBOARD_BOTTOM_PADDING_DP = 0
+
+    fun getKeyboardBottomPaddingDp(context: Context): Int {
+        return getPrefs(context).getInt(KEY_KEYBOARD_BOTTOM_PADDING_DP, DEFAULT_KEYBOARD_BOTTOM_PADDING_DP).coerceAtLeast(0)
+    }
 
     /**
      * 旧字段始终保存非负留白，低于系统建议值的校准单独保存。
@@ -1235,7 +1250,9 @@ object SettingsPreferences {
      */
     internal fun getKeyboardBottomAdjustmentDp(context: Context): Int =
         getKeyboardBottomPaddingDp(context).takeIf { it > 0 }
-            ?: -bottomCalibrationDp(context, loweringKey(context))
+            ?: -getPrefs(context).getInt(loweringKey(context), 0).coerceAtLeast(0)
+
+    internal const val KEY_KEYBOARD_BOTTOM_EDGE_LOWERING_DP = "keyboard_bottom_edge_lowering_dp"
 
     private fun loweringKey(context: Context) =
         if (edgeToEdgeKeyboard(context)) KEY_KEYBOARD_BOTTOM_EDGE_LOWERING_DP else KEY_KEYBOARD_BOTTOM_LOWERING_DP
@@ -1245,34 +1262,32 @@ object SettingsPreferences {
     }
 
     internal fun setKeyboardBottomAdjustmentDp(context: Context, adjustmentDp: Int) {
-        val suffix = bottomCalibrationSuffix(context)
-        getPrefs(context).edit()
-            .putInt(KEY_KEYBOARD_BOTTOM_PADDING_DP + suffix, adjustmentDp.coerceAtLeast(0))
-            .putInt(loweringKey(context) + suffix, -adjustmentDp.coerceAtMost(0)).apply()
+        val edit = getPrefs(context).edit().putInt(KEY_KEYBOARD_BOTTOM_PADDING_DP, adjustmentDp.coerceAtLeast(0))
+        val lowering = loweringKey(context)
+        if (adjustmentDp < 0) edit.putInt(lowering, -adjustmentDp)
+        else edit.remove(lowering)
+        edit.apply()
     }
 
     /** 键盘上次量到的「最多还能调低多少 dp」（系统建议值减安全下限，按当前方向）；没量过为 null。 */
-    private fun bottomLimitKey(context: Context) =
-        (if (edgeToEdgeKeyboard(context)) KEY_KEYBOARD_EDGE_LOWERING_LIMIT_DP else KEY_KEYBOARD_BOTTOM_LOWERING_LIMIT_DP) +
-            bottomCalibrationSuffix(context)
+    internal const val KEY_KEYBOARD_BOTTOM_LOWERING_LIMIT_DP = "keyboard_bottom_lowering_limit_dp"
 
     internal fun getKeyboardBottomLoweringLimitDp(context: Context): Int? =
-        getPrefs(context).getInt(bottomLimitKey(context), -1).takeIf { it >= 0 }
+        getPrefs(context).getInt(KEY_KEYBOARD_BOTTOM_LOWERING_LIMIT_DP, -1).takeIf { it >= 0 }
 
     /** 键盘量到新的下限时写一次；值没变不写，免得每次 insets 回调都触发设置页刷新。 */
     internal fun setKeyboardBottomLoweringLimitDp(context: Context, limitDp: Int) {
         val value = limitDp.coerceAtLeast(0)
         if (getKeyboardBottomLoweringLimitDp(context) != value)
-            getPrefs(context).edit().putInt(bottomLimitKey(context), value).apply()
+            getPrefs(context).edit().putInt(KEY_KEYBOARD_BOTTOM_LOWERING_LIMIT_DP, value).apply()
     }
 
     internal fun resetKeyboardBottomCalibration(context: Context) {
         // 「恢复系统建议」就是用系统给的底边：明确记下贴底关，不回到默认的开。
-        val suffix = bottomCalibrationSuffix(context)
-        getPrefs(context).edit().putBoolean(KEY_EDGE_TO_EDGE_KEYBOARD + suffix, false)
-            .putInt(KEY_KEYBOARD_BOTTOM_PADDING_DP + suffix, 0)
-            .putInt(KEY_KEYBOARD_BOTTOM_LOWERING_DP + suffix, 0)
-            .putInt(KEY_KEYBOARD_BOTTOM_EDGE_LOWERING_DP + suffix, 0).apply()
+        // 「底部位置」回到自动（66 的效果），留白清零。
+        getPrefs(context).edit().putBoolean(KEY_EDGE_TO_EDGE_KEYBOARD, true)
+            .putString(KEY_KEYBOARD_BOTTOM_POSITION, KeyboardBottomPosition.AUTO.name).remove(KEY_KEYBOARD_BOTTOM_PADDING_DP)
+            .remove(KEY_KEYBOARD_BOTTOM_LOWERING_DP).remove(KEY_KEYBOARD_BOTTOM_EDGE_LOWERING_DP).apply()
     }
 
     fun isSchemaImportWarningDismissed(context: Context): Boolean {

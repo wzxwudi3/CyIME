@@ -18,6 +18,16 @@ class PinyinEditBufferTest {
         assertEquals("a'b" to 3, PinyinEditBuffer.mergeSeparators("a'''b", 5))
         assertEquals("a'b" to 0, PinyinEditBuffer.mergeSeparators("a'b", 0))
     }
+    /** 11-09 平板：ni'hao 在 ni 后面连删两下，剩下的开头分隔符显示成「‘hao」，光标在它后面也删不掉。 */
+    @Test fun leadingSeparatorsLeftByDeletingAreDropped() {
+        assertEquals("hao" to 0, PinyinEditBuffer.dropLeadingSeparators("'hao", 0))
+        assertEquals("hao" to 0, PinyinEditBuffer.dropLeadingSeparators("''hao", 1))
+        assertEquals("hao" to 2, PinyinEditBuffer.dropLeadingSeparators("'hao", 3))
+        assertEquals("" to 0, PinyinEditBuffer.dropLeadingSeparators("'", 1))
+        // 中间和末尾的分隔符不动。
+        assertEquals("n'hao" to 1, PinyinEditBuffer.dropLeadingSeparators("n'hao", 1))
+        assertEquals("ni'" to 3, PinyinEditBuffer.dropLeadingSeparators("ni'", 3))
+    }
     @Test fun mapsCaretOnBothSidesOfASeparator() {
         assertEquals(2, mapCodeOffset("ni'hao", "ni'hao", 2))
         assertEquals(3, mapCodeOffset("ni'hao", "ni'hao", 3))
@@ -79,5 +89,20 @@ class PinyinEditBufferTest {
         assertEquals("ao jia ge", dropReadingKeys("xu yao jia ge", 3))
         assertEquals("o jia ge", dropReadingKeys("yao jia ge", 2))
         assertEquals("", dropReadingKeys("xu yao", 5))
+    }
+
+    @Test fun doublePinyinTapInTheInputBoxMovesTheEditCaretToThoseKeys() {
+        // 11-08: 小鹤双拼, tapping after shuang and deleting removed the last key instead.
+        val session = PinyinEditSession(1, "double_pinyin_flypy", "ulpb", "", "", "ulpb", 4, false)
+        assertEquals(2, session.editOffset("shuang pin", 6))
+        assertEquals(2, session.editOffset("shuang'pin", 7))
+        assertEquals(4, session.editOffset("shuang'pin", 10))
+        assertEquals(6, session.copy(caret = 2).inlineOffset("shuang'pin"))
+        val confirmed = PinyinEditSession(1, "double_pinyin_flypy", "nihcul", "nihc", "你好", "ul", 2, false)
+        assertEquals(0, confirmed.editOffset("你好shuang", 2))
+        assertEquals(2, confirmed.editOffset("你好shuang", 8))
+        // Full pinyin keeps its own one-to-one path; unrelated text is still rejected.
+        assertNull(PinyinEditSession(1, "rime_ice", "ulpb", "", "", "ulpb", 4, false).editOffset("shuang'pin", 6))
+        assertNull(session.editOffset("ni'hao", 2))
     }
 }

@@ -33,6 +33,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** 缺手写模型时打开的下载页（HandwritingEngine.hasModel 认的是 ochwpro）。 */
+internal const val HANDWRITING_MODEL_DOWNLOAD_ROUTE = "model_market_detail/ochwpro"
+
 /** Reuse the settings activity; onNewIntent handles explicit destinations without recreating it. */
 internal fun settingsActivityIntent(context: android.content.Context, route: String? = null) =
     Intent(context, MainActivity::class.java).apply {
@@ -63,33 +66,50 @@ internal class ImeSchemaController(private val service: XimeInputMethodService) 
             service.keyboardViewModel.enterTemporaryHandwriting()
     }
 
+    /** 进英文之前的语言：在英文单词方案上按语言键回到这里（[com.kingzcheung.xime.settings.EnglishSchemes.nativeLanguage]）。 */
+    private var nativeBeforeEnglish: InputLanguage? = null
+
+    /** [englishProfile]：这一次切到英文用的方案（菜单点了「直接输入」），null 按「语言与方案」里选的。 */
     internal suspend fun switchInputMethod(targetLanguage: InputLanguage? = null,
         useLanguageKeyPreference: Boolean = false,
-        languageSwitchMode: com.kingzcheung.xime.settings.LanguageSwitchMode? = null): Boolean {
+        languageSwitchMode: com.kingzcheung.xime.settings.LanguageSwitchMode? = null,
+        englishProfile: String? = null): Boolean {
         if (service.editorInputPolicy.locksNativeInput) return false
         val fromLanguage = currentLanguage()
         val currentSchema = service.rimeEngine.getCurrentSchema()
-        val nativeLanguage = InputModes.languageOf(currentSchema, service.uiState.value.schemas)
+        val schemaLanguage = InputModes.languageOf(currentSchema, service.uiState.value.schemas)
         val entries = InputModes.available(service.uiState.value.schemas)
         val enabled = LanguagePreferences.enabled(service)
-        val available = (entries.filter { it.profile.mode == InputMode.KEYBOARD }.map { it.profile.language } +
-            listOfNotNull(nativeLanguage.takeIf { currentSchema.isNotBlank() })).filter { it in enabled }.toSet()
+        val keyboardLanguages = entries.filter { it.profile.mode == InputMode.KEYBOARD }.map { it.profile.language }
+            .filter { it in enabled }.toSet()
+        // 英文单词方案本身就是英文：母语取进英文之前的语言，语言键才回得去。
+        val nativeLanguage = com.kingzcheung.xime.settings.EnglishSchemes.nativeLanguage(schemaLanguage,
+            nativeBeforeEnglish, InputModes.languageOrder(service), keyboardLanguages)
+        val available = (keyboardLanguages + listOfNotNull(nativeLanguage.takeIf { currentSchema.isNotBlank() && it in enabled })).toSet()
         // Schema-options retain explicit ASCII behavior. The language key reads its preference;
         // physical shortcuts may override this one request without changing that preference.
         val target = targetLanguage ?: if (useLanguageKeyPreference)
             LanguageSwitchPreferences.target(fromLanguage, nativeLanguage, LanguageSwitchPreferences.forRequest(
                 LanguageSwitchPreferences.read(service), languageSwitchMode),
                 InputModes.languageOrder(service), available)
-        else if (service.rimeEngine.isAsciiMode()) nativeLanguage else InputLanguage.ENGLISH
+        else if (service.rimeEngine.isAsciiMode() || schemaLanguage == InputLanguage.ENGLISH) nativeLanguage else InputLanguage.ENGLISH
         if (target == null || target !in available) return false
-        val targetSchema = if (target == InputLanguage.ENGLISH) currentSchema else {
-            val localChoice = service.editorInputPolicy.schemaOverride?.takeIf { id ->
-                entries.any { it.schemaId == id && it.profile.language == target }
-            }
+        val localChoice = service.editorInputPolicy.schemaOverride?.takeIf { id ->
+            entries.any { it.schemaId == id && it.profile.language == target }
+        }
+        // 英文：选了单词方案就换到它；直接输入在母语方案上开 ascii（在单词方案上先回母语方案）。
+        val englishTarget = if (target != InputLanguage.ENGLISH) null else {
+            val nativeSchema = InputProfileSelection.preferred(entries, nativeLanguage,
+                InputModes.selectedProfiles(service)[nativeLanguage] ?: InputModes.rememberedModes(service, entries)[nativeLanguage])?.schemaId
+            com.kingzcheung.xime.settings.EnglishSchemes.target(entries,
+                englishProfile ?: localChoice ?: InputModes.selectedProfiles(service)[InputLanguage.ENGLISH],
+                currentSchema, nativeSchema) ?: return false
+        }
+        val targetSchema = englishTarget?.schemaId ?: run {
             val selected = localChoice ?: InputModes.selectedProfiles(service)[target]
                 ?: InputModes.rememberedModes(service, entries)[target]
             InputProfileSelection.preferred(entries, target, selected, currentSchema)?.schemaId
-                ?: currentSchema.takeIf { nativeLanguage == target }
+                ?: currentSchema.takeIf { schemaLanguage == target }
                 ?: return false
         }
         val changesSchema = targetSchema != currentSchema
@@ -127,6 +147,7 @@ internal class ImeSchemaController(private val service: XimeInputMethodService) 
         if (fromLanguage != InputLanguage.ENGLISH && !service.editorInputPolicy.scoped) {
             InputModes.rememberMode(service, currentSchema, nativeLanguage)
         }
+        if (fromLanguage != InputLanguage.ENGLISH && target == InputLanguage.ENGLISH) nativeBeforeEnglish = fromLanguage
         if (changesSchema) {
             applyPageSizeSetting(targetSchema)
             if (!service.rimeEngine.switchSchema(targetSchema)) {
@@ -136,7 +157,7 @@ internal class ImeSchemaController(private val service: XimeInputMethodService) 
                 return false
             }
         }
-        val targetAscii = target == InputLanguage.ENGLISH
+        val targetAscii = englishTarget?.asciiMode == true
         if (service.rimeEngine.isAsciiMode() != targetAscii && !service.rimeEngine.toggleAsciiMode()) {
             FileLogger.e(XimeInputMethodService.TAG, "switchInputMethod: engine unavailable")
             withContext(Dispatchers.Main) { Toast.makeText(service, "输入法引擎不可用，请稍后再试", Toast.LENGTH_SHORT).show() }
@@ -437,8 +458,9 @@ internal class ImeSchemaController(private val service: XimeInputMethodService) 
                 return@editCursor
             }
             val multiLine = editorIsMultiLine()
+            val lines = internalEditorLines()
             repeat(abs(steps).coerceAtMost(1000)) {
-                if (!editorCursor.moveLine(connection, steps.sign, selecting, multiLine)) return@editCursor
+                if (!editorCursor.moveLine(connection, steps.sign, selecting, multiLine, lines)) return@editCursor
             }
         }
 
@@ -461,7 +483,8 @@ internal class ImeSchemaController(private val service: XimeInputMethodService) 
         // 终端读不到文字，下面的文内移动永远原地不动；方向键连同 Shift/Ctrl 交给终端自己处理。
         if (!target.isInternal && service.isTerminalEditor()) return TerminalEditor.forward(ic, event)
         editorCursor.movePhysical(ic, event.keyCode, event.isShiftPressed,
-            byWord = event.isCtrlPressed, toBoundary = event.isAltPressed || event.isMetaPressed)
+            byWord = event.isCtrlPressed, toBoundary = event.isAltPressed || event.isMetaPressed,
+            lines = internalEditor?.takeIf { target.isInternal }?.let(::InternalEditorLines))
     }
 
     /**
@@ -510,6 +533,21 @@ internal class ImeSchemaController(private val service: XimeInputMethodService) 
         }
     }
 
+    /**
+     * 编辑面板的「复制」。先交给应用；应用不接复制菜单（有的应用自己画的编辑器，选区是应用自己选的，
+     * 剪切能用、复制没反应，用户 11-09 转述 MT 管理器）时，键盘把选中的字写进系统剪贴板。
+     */
+    private fun copySelection(connection: InputConnection) {
+        if (connection.performContextMenuAction(android.R.id.copy)) return
+        // 密码框不让复制是应用有意的，键盘不替它复制。
+        if (com.kingzcheung.xime.settings.IncognitoState.passwordField) return
+        val selected = connection.getSelectedText(InputConnection.GET_TEXT_WITH_STYLES)?.takeIf { it.isNotEmpty() } ?: return
+        runCatching {
+            val clipboard = service.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            clipboard.setPrimaryClip(android.content.ClipData.newPlainText(null, selected))
+        }.onFailure { Log.w("ImeSchemaController", "Could not copy the selection", it) }
+    }
+
     // 编辑面板的所有动作与选择、移光标同一个按键队列、同一个输入框，按点的顺序执行（审计 F05：
     // 以前全选/复制/剪切/粘贴/撤销直接作用于当前连接，排在前面的扩选还没执行就剪了旧选区）。
     internal fun handleToolbarEditingAction(action: String) {
@@ -533,12 +571,13 @@ internal class ImeSchemaController(private val service: XimeInputMethodService) 
             // Shift+回车：换行，不管应用把回车设成什么（见 EnterKeyAction.shiftEnter）。
             "newline" -> editCursor { service.keyRouter.performIdleEnter(it, shift = true) }
             "select_all" -> editCursor { selectAllGuard.selectAll(it) }
-            "copy" -> editCursor { it.performContextMenuAction(android.R.id.copy) }
+            "copy" -> editCursor { copySelection(it) }
             "cut" -> editCursor { it.performContextMenuAction(android.R.id.cut) }
             "paste", "paste_plain" -> editCursor {
                 service.dismissPredictionsForPaste()
                 val plain = action == "paste_plain"
                 val accepted = it.performContextMenuAction(if (plain) android.R.id.pasteAsPlainText else android.R.id.paste)
+                if (accepted) service.hideClipboardSuggestionsAfterPaste()
                 if (plain && !accepted) Toast.makeText(service, "当前输入框不支持粘贴纯文本", Toast.LENGTH_SHORT).show()
             }
             "select_begin" -> editCursor { editorCursor.beginSelection(it) }
@@ -551,13 +590,22 @@ internal class ImeSchemaController(private val service: XimeInputMethodService) 
                 editorCursor.move(it, if (action.endsWith("left")) -1 else 1, action.startsWith("select_"))
             }
             "line_start", "line_end", "select_line_start", "select_line_end" -> editCursor {
-                editorCursor.moveToLineBoundary(it, toEnd = action.endsWith("end"), selecting = action.startsWith("select_"))
+                editorCursor.moveToLineBoundary(it, toEnd = action.endsWith("end"), selecting = action.startsWith("select_"),
+                    lines = internalEditorLines())
             }
             "arrow_up", "arrow_down", "select_arrow_up", "select_arrow_down" -> editCursor {
-                editorCursor.moveLine(it, if (action.endsWith("up")) -1 else 1, action.startsWith("select_"), editorIsMultiLine())
+                editorCursor.moveLine(it, if (action.endsWith("up")) -1 else 1, action.startsWith("select_"), editorIsMultiLine(),
+                    internalEditorLines())
             }
         }
     }
+
+    /**
+     * 键盘自己的输入框（剪贴板编辑、新增固定、剪贴板搜索）：上下、行首行尾按它自己的排版设选区。
+     * 它们在没有窗口焦点的键盘窗口/悬浮窗里，发过去的方向键会被系统丢掉；应用的输入框为 null，照旧。
+     */
+    private fun internalEditorLines(): EditorCursor.VisualLines? =
+        service.uiState.value.inputTarget.takeIf { it.isInternal }?.editText()?.let(::InternalEditorLines)
 
     /** 只有声明多行的文本框才交给宿主按视觉行移动；单行框里宿主的上下键可能移走焦点。 */
     private fun editorIsMultiLine(): Boolean {
@@ -596,23 +644,31 @@ internal class ImeSchemaController(private val service: XimeInputMethodService) 
         }
         if (!templateHandwriting && !com.kingzcheung.xime.handwriting.HandwritingEngine.hasModel(service, recognitionLanguage!!)) {
             Toast.makeText(service, "请先下载手写模型", Toast.LENGTH_SHORT).show()
-            service.startActivity(settingsActivityIntent(service, "model_management"))
+            // 直接打开手写模型的下载页；「模型管理」只列已安装的，没装时那里没有下载入口。
+            service.startActivity(settingsActivityIntent(service, HANDWRITING_MODEL_DOWNLOAD_ROUTE))
             return
         }
         service.editorInputPolicy.choose(false)
         model.enterTemporaryHandwriting()
     }
 
-    internal fun switchSchema(schemaId: String) {
+    /**
+     * [stayInHandwriting]：手写开着时换方案，新语言能手写就留在手写（换语言的老规矩）；
+     * 从布局选择里点了布局时为 false，回到所选键盘（平板复现：手写时点 26 键仍停在手写）。
+     */
+    internal fun switchSchema(schemaId: String, stayInHandwriting: Boolean = true) {
         if (service.editorInputPolicy.locksNativeInput) return
         if (schemaId == com.kingzcheung.xime.settings.InputModes.ENGLISH) {
             service.keyRouter.postRimeJob {
-                if (!service.rimeEngine.isAsciiMode() && !switchInputMethod(targetLanguage = InputLanguage.ENGLISH)) return@postRimeJob
+                // 点的是「英文 · 直接输入」：记下这个选择，之后语言键切英文也用直接输入（不是单词方案）。
+                if (!service.editorInputPolicy.scoped) InputModes.selectProfile(service, InputModes.ENGLISH, InputLanguage.ENGLISH)
+                if (!service.rimeEngine.isAsciiMode() && !switchInputMethod(targetLanguage = InputLanguage.ENGLISH,
+                        englishProfile = InputModes.ENGLISH)) return@postRimeJob
                 val engineSchema = service.rimeEngine.getCurrentSchema()
                 service.editorInputPolicy.choose(true, engineSchema)
                 service.sessionController.persistSchemaOption("ascii_mode", true)
                 withContext(Dispatchers.Main) {
-                    val keepHandwriting = handwritingOpen()
+                    val keepHandwriting = stayInHandwriting && handwritingOpen()
                     com.kingzcheung.xime.handwriting.HandwritingEngine.release()
                     service.keyboardViewModel.discardTemporaryHandwriting()
                     service.keyboardViewModel.asciiStateMachine.reset()
@@ -636,7 +692,7 @@ internal class ImeSchemaController(private val service: XimeInputMethodService) 
                 android.widget.Toast.makeText(
                     service, "请先下载手写模型", android.widget.Toast.LENGTH_LONG
                 ).show()
-                service.startActivity(settingsActivityIntent(service, "model_management"))
+                service.startActivity(settingsActivityIntent(service, HANDWRITING_MODEL_DOWNLOAD_ROUTE))
                 return
             }
             service.keyboardViewModel.discardTemporaryHandwriting()
@@ -669,7 +725,7 @@ internal class ImeSchemaController(private val service: XimeInputMethodService) 
                 service.editorInputPolicy.choose(false, schemaId)
                 service.sessionController.persistSchemaOption("ascii_mode", false)
                 withContext(Dispatchers.Main) {
-                    val keepHandwriting = handwritingOpen()
+                    val keepHandwriting = stayInHandwriting && handwritingOpen()
                     com.kingzcheung.xime.handwriting.HandwritingEngine.release()
                     val model = service.keyboardViewModel
                     model.discardTemporaryHandwriting()

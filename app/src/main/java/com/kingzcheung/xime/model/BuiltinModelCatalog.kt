@@ -76,6 +76,33 @@ object BuiltinModelCatalog {
                     ModelFile("joiner.int8.onnx", "", "", 0L),
                     ModelFile("tokens.txt", "", "", 0L),
                 )))),
+        // 离线翻译（翻译插件没填 API 时用，translate/OfflineTranslation.kt；引擎 libcytranslate.so 在安装包里）。
+        // Mozilla Firefox 翻译模型，取自 storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data
+        // 的 db/models.json（2026-11-08），解压后原样转存到 Release `models` 和魔搭，文件名前加 translate-<方向>-v1-。
+        // 中译英：Firefox「Release Android」版 models/zh-en/cjk_retrain_base-memory_cNY_yaJCStGwnTeXgW8A5w，两边共用一个词表。
+        ModelInfo("translate-zh-en", "离线翻译 · 中译英", "翻译插件没填 API 时，在手机上把中文翻成英文，不联网。Mozilla Firefox 的翻译模型。", ModelCategory.OTHER,
+            versions = listOf(ModelVersion(version = "v1", size = "52.0 MB",
+                files = listOf(
+                    ModelFile("model.zhen.intgemm.alphas.bin", RELEASE + "translate-zh-en-v1-model.zhen.intgemm.alphas.bin", "5cd149601802fc8a18124a1c1306144dbbedc058630c4ddb2d53aa76fa9c7c06", 43977787L,
+                        mirrors = listOf(DownloadMirrors.CYIME_MODELSCOPE + "translate-zh-en-v1-model.zhen.intgemm.alphas.bin")),
+                    ModelFile("vocab.zhen.spm", RELEASE + "translate-zh-en-v1-vocab.zhen.spm", "dff594318ab7d8b7b60b844ab98ebe6b932ae8045fab15235404c787715965b3", 1359697L,
+                        mirrors = listOf(DownloadMirrors.CYIME_MODELSCOPE + "translate-zh-en-v1-vocab.zhen.spm")),
+                    ModelFile("lex.50.50.zhen.s2t.bin", RELEASE + "translate-zh-en-v1-lex.50.50.zhen.s2t.bin", "8524dd4c93ffd7f0ae7be32f77a7c14fea7cdbbebe34ea6ad0ec368d5ddd8b13", 9219192L,
+                        mirrors = listOf(DownloadMirrors.CYIME_MODELSCOPE + "translate-zh-en-v1-lex.50.50.zhen.s2t.bin")),
+                )))),
+        // 英译中：Firefox「Release」版 models/en-zh/llmaat_finetune10M_qe8_f2_ByQcSxGXQRqGi-UTxYE43g，源、目标各一个词表。
+        ModelInfo("translate-en-zh", "离线翻译 · 英译中", "翻译插件没填 API 时，在手机上把英文翻成中文，不联网。Mozilla Firefox 的翻译模型。", ModelCategory.OTHER,
+            versions = listOf(ModelVersion(version = "v1", size = "48.7 MB",
+                files = listOf(
+                    ModelFile("model.enzh.intgemm.alphas.bin", RELEASE + "translate-en-zh-v1-model.enzh.intgemm.alphas.bin", "ce4486f728641a36269a245248dcb53405e76d96d9eba68dcb4172f29521e092", 42992955L,
+                        mirrors = listOf(DownloadMirrors.CYIME_MODELSCOPE + "translate-en-zh-v1-model.enzh.intgemm.alphas.bin")),
+                    ModelFile("srcvocab.enzh.spm", RELEASE + "translate-en-zh-v1-srcvocab.enzh.spm", "bd9b65504acc6d9726dd281f7defc2adb7c2c22d0688fe2f84697de25197c8c5", 806952L,
+                        mirrors = listOf(DownloadMirrors.CYIME_MODELSCOPE + "translate-en-zh-v1-srcvocab.enzh.spm")),
+                    ModelFile("trgvocab.enzh.spm", RELEASE + "translate-en-zh-v1-trgvocab.enzh.spm", "aded6993c36e440284d11cec3f6b8aef9c0e43188a772d80be342a713adf223d", 772004L,
+                        mirrors = listOf(DownloadMirrors.CYIME_MODELSCOPE + "translate-en-zh-v1-trgvocab.enzh.spm")),
+                    ModelFile("lex.50.50.enzh.s2t.bin", RELEASE + "translate-en-zh-v1-lex.50.50.enzh.s2t.bin", "4a5e5827788060f1d718a8132b69440929387514a045796e9b77f935db68c055", 6506248L,
+                        mirrors = listOf(DownloadMirrors.CYIME_MODELSCOPE + "translate-en-zh-v1-lex.50.50.enzh.s2t.bin")),
+                )))),
         // 字母逐字上屏的语言（LetterLanguage）的补全词表：不进安装包，开启语言时下载。
         // 源文件在 tools/wordlists（build_words.py 生成，来源见 NOTICE），原样传到 Release `models` 和魔搭。
         ModelInfo("words-es", "西班牙语补全词表", "西班牙语键盘的单词补全，约 4 万个常用词。不打重音也能补全：cancion → canción、ano → año。", ModelCategory.OTHER,
@@ -90,6 +117,10 @@ object BuiltinModelCatalog {
             versions = listOf(ModelVersion(version = "v1", size = "0.32 MB",
                 files = listOf(ModelFile("cyime-words-fr-v1.txt", RELEASE + "cyime-words-fr-v1.txt", "5ed4378b44aecce3afba69f312bbb802f53ede4b8f8c3a941370a9a791b95a19", 339957L,
                     mirrors = listOf(DownloadMirrors.CYIME_MODELSCOPE + "cyime-words-fr-v1.txt")))))),
+        ModelInfo("words-it", "意大利语补全词表", "意大利语键盘的单词补全，约 4 万个常用词。不打重音也能补全：perche → perché、citta → città。", ModelCategory.OTHER,
+            versions = listOf(ModelVersion(version = "v1", size = "0.34 MB",
+                files = listOf(ModelFile("cyime-words-it-v1.txt", RELEASE + "cyime-words-it-v1.txt", "a746aaaea5d3142fe22dc940cf8f390709242bddbc7a71d4dca67124cfc1d5a2", 356137L,
+                    mirrors = listOf(DownloadMirrors.CYIME_MODELSCOPE + "cyime-words-it-v1.txt")))))),
         ModelInfo("words-ru", "俄语补全词表", "俄语键盘的单词补全，约 4 万个常用词。不打 ё 也能补全：еще → ещё。", ModelCategory.OTHER,
             versions = listOf(ModelVersion(version = "v1", size = "0.62 MB",
                 files = listOf(ModelFile("cyime-words-ru-v1.txt", RELEASE + "cyime-words-ru-v1.txt", "7a818abbe5e85670b76cdac369453848c664540122cf33112365eae749728177", 654612L,

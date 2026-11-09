@@ -33,7 +33,7 @@ internal class ImePreeditEditor(private val service: XimeInputMethodService) {
             val confirmed = snapshot.getOrNull(2)?.toIntOrNull()?.coerceIn(0, input.length) ?: 0
             val t9 = isT9Schema(state.currentSchemaId)
             val rawText = if (t9) snapshot.getOrNull(4).orEmpty() else input.drop(confirmed)
-            val normalized = PinyinEditBuffer.normalized(rawText)
+            val normalized = PinyinEditBuffer.normalized(rawText, PinyinEditBuffer.keepsCase(state.currentSchemaId))
             val unsupportedCode = rawText.any { it !in 'a'..'z' && it !in 'A'..'Z' && it != '\'' && !it.isWhitespace() && it != 'ü' }
             val prefix = if (t9) service.t9PartialSegments.joinToString("") { it.text }
                 else snapshot.getOrNull(3).orEmpty()
@@ -93,7 +93,8 @@ internal class ImePreeditEditor(private val service: XimeInputMethodService) {
                 val edited = multiTap.press(text, caret, letters, eventTime)
                 text = edited.first; caret = edited.second
             } else if (replacement != null) {
-                text = if (session.isT9) PinyinEditBuffer.normalizedT9(replacement) else PinyinEditBuffer.normalized(replacement)
+                text = if (session.isT9) PinyinEditBuffer.normalizedT9(replacement)
+                    else PinyinEditBuffer.normalized(replacement, PinyinEditBuffer.keepsCase(session.schemaId))
                 caret = text.length
             } else if (key?.startsWith("preedit_cursor:") == true) {
                 val movement = key.substringAfter(":")
@@ -108,8 +109,19 @@ internal class ImePreeditEditor(private val service: XimeInputMethodService) {
                 }
             } else if (key == "delete") {
                 if (caret > 0) { text = text.removeRange(caret - 1, caret); caret-- }
+                else if (!session.isT9 && session.protectedInput.isEmpty()) {
+                    // 光标在编码最前面：编码里没有可删的，删输入框里编码前面的字，编码留着接着打
+                    // （11-09 平板：原来删除键在这里没反应）。
+                    withContext(Dispatchers.Main) {
+                        if (owner.isActive() && isOwnerCurrent(session)) service.deleteBeforeComposition()
+                        reply(session)
+                    }
+                    return@enqueue
+                }
             } else if (key != null) {
-                val insertion = if (session.isT9 && key == "1") "'" else key.lowercase()
+                // 英文单词方案的编码分大小写：Shift 打的大写字母原样插进去。
+                val insertion = if (session.isT9 && key == "1") "'"
+                    else if (PinyinEditBuffer.keepsCase(session.schemaId)) key else key.lowercase()
                 text = text.take(caret) + insertion + text.drop(caret)
                 caret += insertion.length
             }
@@ -117,6 +129,13 @@ internal class ImePreeditEditor(private val service: XimeInputMethodService) {
                 val merged = PinyinEditBuffer.mergeSeparators(text, caret)
                 text = merged.first
                 caret = merged.second
+                // 删光前面的音节后，开头剩下的分隔符没用：留着显示成「‘hao」（11-09 平板）。
+                // 编码分大小写的方案（英文单词）里开头的撇号可能是单词本身的，不去掉。
+                if (!PinyinEditBuffer.keepsCase(session.schemaId)) {
+                    val trimmed = PinyinEditBuffer.dropLeadingSeparators(text, caret)
+                    text = trimmed.first
+                    caret = trimmed.second
+                }
             }
             val engine = service.rimeEngine
             val changed = text != session.text
@@ -131,8 +150,11 @@ internal class ImePreeditEditor(private val service: XimeInputMethodService) {
                     val engineText = if (changed) session.protectedInput + (com.kingzcheung.xime.settings.CustomKeyboardLayouts.find(session.schemaId)?.encode(text) ?: text) else session.expectedInput
                     val engineCaret = if (changed) caret else PinyinEditDisplay(
                         session.expectedInput.drop(session.protectedInput.length), session.text, isMerged14 = com.kingzcheung.xime.settings.InputProfiles.describe(session.schemaId).layout == com.kingzcheung.xime.settings.InputLayout.MERGED14, groups = com.kingzcheung.xime.settings.CustomKeyboardLayouts.forSchema(session.schemaId)?.rows?.flatten() ?: if (com.kingzcheung.xime.settings.InputProfiles.describe(session.schemaId).layout == com.kingzcheung.xime.settings.InputLayout.MERGED14) com.kingzcheung.xime.rime.merged14Groups else emptyList()).rawOffset(caret)
+                    // 光标在编码最前面时，候选按整段编码给：Rime 的光标放在 0 时前面没有编码，
+                    // 候选是空的，空格选不了字（11-09 平板）。显示的光标仍在最前面。
+                    val placedCaret = if (engineCaret == 0) engineText.length - session.protectedInput.length else engineCaret
                     engine.applyPinyinEdit(session.expectedInput, engineText,
-                        session.protectedInput.length + engineCaret, session.protectedInput.length,
+                        session.protectedInput.length + placedCaret, session.protectedInput.length,
                         session.protectedText, session.schemaId, visibleReading = text) { owner.isActive() && isOwnerCurrent(session) }
                 }
             }

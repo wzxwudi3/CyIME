@@ -15,6 +15,8 @@ data class CandidateState(
     /** 刚由滑行整词上屏的词；光标仍紧跟它时，下一个点按字母先补空格。 */
     val glidedWord: String = "",
     val isShowingRecentClipboard: Boolean = false,
+    /** 显示剪贴板时 [candidates] 开头有几项是提取出来的链接、长数字（前面的短胶囊），其余是原文。 */
+    val clipboardExtractedCount: Int = 0,
     /** 当前宿主是否支持英文候选的"回删替换"（终端等受限宿主为 false，不展示英文候选）。 */
     val englishReplaceSupported: Boolean = true,
     /** 候选词变换映射（插件 candidate_transform 能力）：与 [candidates] 平行；
@@ -37,7 +39,15 @@ data class CandidateState(
     /** 「打数字出短语」放上去的那一组；[digitPhraseText] 是光标前那串数字（原样），选了就换掉它。见 DigitPhrases。 */
     val digitPhrases: List<String> = emptyList(),
     val digitPhraseText: String = "",
-)
+    /**
+     * 数字键盘算式放上去的那一组（结果、算式 = 结果）；[candidates] 还是这一组时候选栏按计算器显示（能滑、没有展开键）。
+     * 计算器引擎不是界面状态，界面按它判断会停在旧值：长算式被当成打字候选，展开页是空的（GitHub #289）。
+     */
+    val calculatorCandidates: List<String> = emptyList(),
+) {
+    /** 候选栏现在放的是不是计算器结果。 */
+    val showsCalculator: Boolean get() = calculatorCandidates.isNotEmpty() && calculatorCandidates == candidates
+}
 
 /** 候选栏上现在是删字后放回的那一组：不挡退格、不被空格上屏、不进九键选词。 */
 internal val CandidateState.isDeletionRecovery: Boolean

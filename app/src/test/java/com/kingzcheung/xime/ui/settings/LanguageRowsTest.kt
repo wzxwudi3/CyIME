@@ -20,13 +20,37 @@ class LanguageRowsTest {
 
     @Test
     fun everyLanguageTurnedOffOneByOneStaysUnique() {
-        val order = listOf("zh", "ja", "en", "es", "de", "fr", "ru", "ko").filter { it in all }
+        val order = listOf("zh", "ja", "en", "es", "de", "fr", "it", "ru", "ko").filter { it in all }
         order.filter { it != "en" }.forEach { off ->
             val enabled = InputLanguage.supported.filter { it.id != off }.toSet()
             val rows = languageRows(order, enabled)
             assertEquals(rows.distinct(), rows)
             assertEquals(off, rows.last())
         }
+    }
+
+    @Test
+    fun unusedLetterLanguagesFoldUnderMoreLanguages() {
+        val enabled = setOf(InputLanguage.CHINESE, InputLanguage.ENGLISH, InputLanguage.FRENCH, InputLanguage.UNSPECIFIED)
+        val rows = languageRows(listOf("zh", "en", "fr"), enabled)
+        val folded = foldedLanguages(rows, enabled)
+        // 开着的法语、中文、日语（没开也列出）不收；没开的其他字母语言收进去。
+        assertEquals(false, "fr" in folded)
+        assertEquals(false, "ja" in folded)
+        assertEquals(true, "es" in folded && "ru" in folded)
+        val closed = languageListRows(rows, enabled, moreOpen = false)
+        assertEquals(MORE_LANGUAGES_ROW, closed.last())
+        assertEquals(rows.filterNot { it in folded }, closed.dropLast(1))
+        val open = languageListRows(rows, enabled, moreOpen = true)
+        assertEquals(closed + folded, open)
+        assertEquals(open.distinct(), open)
+    }
+
+    @Test
+    fun noMoreLanguagesRowWhenEveryLanguageIsOn() {
+        val enabled = InputLanguage.supported.toSet()
+        val rows = languageRows(InputLanguage.supported.map { it.id }, enabled)
+        assertEquals(rows, languageListRows(rows, enabled, moreOpen = false))
     }
 
     @Test

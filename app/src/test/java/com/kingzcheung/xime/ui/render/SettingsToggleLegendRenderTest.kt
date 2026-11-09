@@ -50,6 +50,39 @@ class SettingsToggleLegendRenderTest {
     @get:Rule val rule = createAndroidComposeRule<androidx.activity.ComponentActivity>()
 
     @Test
+    @Config(qualifiers = "zh-rCN-w360dp-h800dp-mdpi")
+    fun zhuyinScriptChoiceIsIndependentOfOtherChineseSchemes() {
+        val context = rule.activity
+        com.kingzcheung.xime.ui.theme.KeyboardThemes.initFromConfig(context)
+        fun prefs() = com.kingzcheung.xime.ui.keyboard.KeyboardInputPreferences.read(context)
+        rule.setContent {
+            XimeTheme(darkTheme = true) {
+                com.kingzcheung.xime.ui.settings.ChineseInputSettingsContent(onBack = {})
+            }
+        }
+        assertEquals(false, prefs().zhuyinSimplified)
+        rule.onNodeWithText("繁体输出").performClick()
+        assertEquals(false, prefs().zhuyinSimplified)
+        rule.onNodeWithText("注音输出简体").performClick()
+        rule.runOnIdle {
+            assertEquals(true, prefs().zhuyinSimplified)
+            assertEquals(true, prefs().traditionalOutput)
+            System.getenv("CYIME_RENDER_OUT")?.let { path ->
+                val view = context.window.decorView
+                val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+                view.draw(android.graphics.Canvas(bitmap))
+                File(path, "zhuyin-output.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                bitmap.recycle()
+            }
+        }
+        rule.onNodeWithText("注音输出简体").performClick()
+        rule.runOnIdle {
+            assertEquals(false, prefs().zhuyinSimplified)
+            assertEquals(true, prefs().traditionalOutput)
+        }
+    }
+
+    @Test
     @Config(qualifiers = "w390dp-h840dp-mdpi")
     fun longSentenceChoiceRequiresBothFilesAndSavesTheSwitch() {
         val context = rule.activity
@@ -118,10 +151,15 @@ class SettingsToggleLegendRenderTest {
         rule.setContent { XimeTheme(darkTheme = false) { AllLegends(on.value) } }
         val added = listOf("槻", "15:35", "😄", "+", "π", "微信支付", "qq.com", "分词", "␣")
         fun count(text: String) = rule.onAllNodesWithText(text, useUnmergedTree = true).fetchSemanticsNodes().size
+        fun dividers() = rule.onAllNodesWithTag("candidate-spacing-legend-divider", useUnmergedTree = true)
+            .fetchSemanticsNodes().size
         added.forEach { assertEquals("关着时不该有 $it", 0, count(it)) }
+        assertEquals("候选词间距加宽关着时不画竖线", 0, dividers())
         rule.runOnIdle { on.value = true }
         rule.waitForIdle()
         added.forEach { assertEquals("开着时应有 $it", if (it == "␣") 2 else 1, count(it)) }
+        // 五个候选之间四条浅色竖线（11-09，像 Gboard）。
+        assertEquals(4, dividers())
         // 每个图例都在限宽卡片里（SettingsLegend 打的 tag）。
         listOf("syllable-split-key-legend", "shift-syllable-split-legend", "semicolon-on-shift-legend",
             "double-pinyin-abbreviation-legend", "even-merged-keys-legend", "split-right-g-legend",

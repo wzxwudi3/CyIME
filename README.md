@@ -104,9 +104,14 @@ git submodule update --init --recursive
 # 调试包 / 发布包
 ./gradlew assembleDebug
 ./gradlew assembleRelease
+
+# 离线包（高敏感环境）：同发布包，但移除 INTERNET 权限，系统层面禁止联网
+./gradlew assembleOffline
 ```
 
 需要 JDK 17 和 NDK `29.0.14206865`。构建时会联网下载雾凇拼音、日语词库、笔画、仓颉码表和 sherpa-onnx 运行库，按记录的 SHA-256 校验后打进安装包。日常出包用仓库根目录的 `packager.cmd`（双击打开图形界面，带参数是命令行），预设见 `scripts/packager/config.json`；版本规则见 [打包与版本规则](docs/packaging.md)。
+
+离线包 `assembleOffline` 在发布包基础上经 `app/src/offline/AndroidManifest.xml` 移除 `INTERNET` 权限，安装后由系统禁止一切联网：模型/词库下载、扩展商店、检查更新、在线语音、样本贡献、剪贴板同步均不可用，请配合完整版离线模型内置包使用，适合高敏感环境。
 
 技术栈：Kotlin · Jetpack Compose · Material 3 · librime（JNI / C++）· ONNX Runtime · sherpa-onnx · OpenCV
 
@@ -195,6 +200,8 @@ CyIME 用到了下面这些项目、数据和模型，感谢作者们的工作�
 | [ReazonSpeech k2 v2](https://huggingface.co/reazon-research/reazonspeech-k2-v2) | Reazon Research | 日语语音识别 | Apache-2.0 |
 | [3D-Speaker CAM++](https://github.com/modelscope/3D-Speaker) | 阿里巴巴 3D-Speaker | 字幕区分说话人 | Apache-2.0 |
 | [PaddleOCR PP-OCRv5](https://github.com/PaddlePaddle/PaddleOCR)、[RapidOCR](https://github.com/RapidAI/RapidOCR) | PaddlePaddle；RapidAI | 拍照识字模型及其 ONNX 版本 | Apache-2.0 |
+| [slimt](https://github.com/jerinphilip/slimt) | Jerin Philip；David Ventura | 离线翻译引擎 | GPL-2.0 |
+| [Firefox 翻译模型](https://github.com/mozilla/translations) | Mozilla | 离线翻译（中英互译，可下载） | MPL-2.0 |
 | [OpenCV](https://github.com/opencv/opencv) | OpenCV | 拍照识字的图像处理 | Apache-2.0 |
 | [KaTeX](https://github.com/KaTeX/KaTeX) | KaTeX 作者 | 显示手写公式 | MIT |
 | [UER-py](https://github.com/dbiir/UER-py) 中文 RoBERTa | UER 团队 | 九键整句打分（已停用，词表仍在包里） | Apache-2.0 |

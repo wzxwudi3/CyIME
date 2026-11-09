@@ -23,15 +23,30 @@ internal fun PinyinEditSession.inlineOffset(code: String): Int? {
     if (!code.startsWith(protectedText)) return null
     val suffix = code.drop(protectedText.length).replace(' ', '\'')
     if (suffix == text) return protectedText.length + caret
-    if (suffix.replace("'", "") != text.replace("'", "")) return null
+    if (suffix.replace("'", "") != text.replace("'", ""))
+        return doublePinyinCaretMap(suffix)?.let { protectedText.length + it.displayOffset(caret) }
     return protectedText.length + mapCodeOffset(text, suffix, caret)
 }
 
 internal fun PinyinEditSession.editOffset(code: String, offset: Int): Int? {
-    if (inlineOffset(code) == null) return null
+    if (!code.startsWith(protectedText)) return null
     val suffix = code.drop(protectedText.length).replace(' ', '\'')
     val local = (offset - protectedText.length).coerceIn(0, suffix.length)
-    return if (suffix == text) local else mapCodeOffset(suffix, text, local)
+    if (suffix == text) return local
+    if (suffix.replace("'", "") == text.replace("'", "")) return mapCodeOffset(suffix, text, local)
+    return doublePinyinCaretMap(suffix)?.rawOffset(local)
+}
+
+/**
+ * 26 键双拼的输入框显示全拼、编辑缓冲是双拼键：按方案键位对位置。不对的话，点了前面的拼音，
+ * 编辑光标还留在末尾，删除删的是最后的键（11-08 小鹤双拼反馈）。
+ */
+private fun PinyinEditSession.doublePinyinCaretMap(suffix: String): DoublePinyinCaretMap? {
+    if (isT9 || com.kingzcheung.xime.settings.InputProfiles.describe(schemaId).scheme !=
+        com.kingzcheung.xime.settings.InputScheme.DOUBLE_PINYIN) return null
+    val own = com.kingzcheung.xime.settings.DoublePinyinSchemes.find(schemaId)
+    val schemes = if (own != null) listOf(own) else com.kingzcheung.xime.settings.DoublePinyinScheme.BUILTINS
+    return schemes.firstNotNullOfOrNull { DoublePinyinCaretMap.build(suffix, text, it) }
 }
 
 /** Preserve which side of a visible boundary the user selected when both texts have one. */
@@ -54,6 +69,19 @@ internal object PinyinEditBuffer {
 
     fun normalized(text: String): String = text.lowercase().replace('ü', 'v')
         .replace(' ', '\'').filter { it in 'a'..'z' || it == '\'' }
+
+    /** 编码分大小写的方案（英文单词，打 Hello 出 Hello）留着大写字母，别的同 [normalized]。 */
+    fun normalized(text: String, keepCase: Boolean): String = if (!keepCase) normalized(text)
+        else text.replace(' ', '\'').filter { it in 'a'..'z' || it in 'A'..'Z' || it == '\'' }
+
+    fun keepsCase(schema: String): Boolean =
+        com.kingzcheung.xime.settings.InputProfiles.describe(schema).capabilities.caseSensitiveCode
+
+    /** 去掉开头的分隔符（光标跟着往前挪）；编码开头的分隔符不分开任何音节。 */
+    fun dropLeadingSeparators(text: String, caret: Int): Pair<String, Int> {
+        val lead = text.takeWhile { it == '\'' }.length
+        return if (lead == 0) text to caret else text.drop(lead) to (caret - lead).coerceAtLeast(0)
+    }
 
     fun mergeSeparators(text: String, caret: Int): Pair<String, Int> {
         val result = StringBuilder()

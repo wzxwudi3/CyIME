@@ -149,10 +149,11 @@ internal val SettingsSearchIndex: List<SettingsSearchEntry> = run {
         page("备份与恢复", other, SettingsRoutes.Backup, "备份 恢复 导出 导入 本地备份 换机 迁移"),
         page("性能与省电", other, SettingsRoutes.Performance, "性能 省电 内存 卡顿 高配 中配 低配 自动 动效 炫光 语音常驻 释放 SenseVoice Paraformer"),
         page("按设备推荐配置", "配置选择", SettingsRoutes.SetupGuide, "推荐 自动 检测 手机 平板 配置 引导 向导 不会设置 不懂 省空间 删模型 体积 太大 占空间 语音模型 九键模型 怎么选 打字习惯 全拼 双拼 小鹤 自然码 微软双拼 五笔 模糊音 平翘舌 前后鼻音 字幕 桌面图标"),
-        page("关于 CyIME", system, SettingsRoutes.About, "版本 开发者 联系 许可 检查更新 最新版本 源代码"),
+        page("关于 CyIME", system, SettingsRoutes.About, "版本 开发者 联系 许可 检查更新 最新版本 源代码 更新内容"),
         // 输入 › 语言与方案
         SettingsSearchEntry("语言键切换方式", languages, "languages", "语言键 切换语言 中英切换 循环切换 指定语言 英文 地球键 点按语言键"),
         SettingsSearchEntry("繁体输出", chinesePath, chinese, "繁体 繁體 正体 简繁 简繁切换 简体 台湾 转换"),
+        SettingsSearchEntry("注音输出简体", chinesePath, chinese, "注音简体 注音繁体 注音转简体 大千 ㄅㄆㄇ 简繁切换"),
         SettingsSearchEntry("生僻字", chinesePath, chinese, "生僻字 罕用字 缺字 打不出 大字表 扩展字 字库 冷僻字"),
         SettingsSearchEntry("时间日期候选", chinesePath, chinese, "时间 日期 星期 今天 几点 当前时间 当前日期 年月日 联想 候选 ts 时间戳 unix"),
         SettingsSearchEntry("网址、邮箱框自动切英文", englishPath, english, "网址 邮箱 链接 地址栏 url email 自动英文 自动切英文 切成英文 变英文 中文 换软件 输入框"),
@@ -188,8 +189,8 @@ internal val SettingsSearchIndex: List<SettingsSearchEntry> = run {
         SettingsSearchEntry("联想常用数字", layouts, layoutIndex, "数字 常用数字 号码 电话 联想 学习 数字键盘 候选"),
         SettingsSearchEntry("数字行", layouts, layoutIndex, "数字行 数字栏 一排数字 顶部数字 第五行 平板 1234567890 数字顺序 数字位置 自定义数字"),
         page("键盘尺寸与位置", layouts, SettingsRoutes.KeyboardResize, "尺寸 大小 高度 宽度 调整尺寸 键盘调节 悬浮 浮动 分体 透明度 底部留白 单手 位置 旋转"),
-        page("锁定悬浮键盘位置和大小", layouts, SettingsRoutes.KeyboardResize, "固定悬浮键盘 防误拖 锁住 解锁 底部短横条 长按 宽高 四角"),
-        SettingsSearchEntry("手势导航时键盘贴底", layouts, layoutPage("bottom_gap"), "键盘底部留白 下边距 底部空白 贴到底 手势导航栏 忽略窗口边衬区 忽略系统窗口边衬区 边衬区 insets 全面屏手势 底部高度"),
+        page("锁定悬浮键盘位置和大小", layouts, SettingsRoutes.KeyboardResize, "固定悬浮键盘 防误拖 锁住 解锁 锁定按钮 底部小锁 长按 宽高 四角"),
+        SettingsSearchEntry("底部位置", layouts, layoutPage("bottom_gap"), "手势导航时键盘贴底 贴到最底 留出导航按钮 切换输入法按钮 收起键盘按钮 键盘底部留白 下边距 底部空白 贴到底 手势导航栏 忽略窗口边衬区 忽略系统窗口边衬区 边衬区 insets 全面屏手势 底部高度"),
         page("底部留白校准", layouts, layoutPage("bottom_gap"), "底部空白 多一行 全面屏手势 导航栏 挡住 按键重叠 底边拖不动 调低 抬高 恢复系统建议"),
         page("工具栏与菜单排列", layouts, SettingsRoutes.ToolbarArrange, "工具栏 菜单 排列 顺序 入口 图标 按钮 自定义工具栏"),
         SettingsSearchEntry("邻键纠错", chinesePath, chinese, "纠错 打错 误触 全拼 双拼 按错 相邻 26键", section = "拼音纠错"),
@@ -222,7 +223,7 @@ internal val SettingsSearchIndex: List<SettingsSearchEntry> = run {
         SettingsSearchEntry("拂动时显示方向圆盘", ninePath, nine, "圆盘 方向 箭头 拂动 提示 假名 日语"),
         SettingsSearchEntry("假名方向提示", ninePath, nine, "日语 日文 假名 灰色小字 方向"),
         // 输入 › 按键与手势
-        SettingsSearchEntry("按键角标的符号和数字", gestures, gesturePage, "角标 角标输入方式 滑动输入 长按输入 符号 数字 上滑 下滑 输入方式 手势预设 预设"),
+        SettingsSearchEntry("按键角标的符号和数字", gestures, gesturePage, "角标 角标输入方式 滑动输入 长按输入 符号 数字 上滑 下滑 输入方式 手势预设 预设 关闭角标滑动 长按时间 长按时长 长按触发 触发时间"),
         SettingsSearchEntry("长按弹出字母气泡", gestures, gesturePage, "长按 字母 大写 小写 音调 气泡 弹出 拼音声调 九键 字母键长按弹出大小写 字母菜单 滑动＋字母气泡", section = "按键角标的符号和数字"),
         SettingsSearchEntry("反转上下滑方向", gestures, gesturePage, "反转 方向 上滑 下滑 上拉 下拉 删除键 清空 撤销"),
         SettingsSearchEntry("左右滑动删除", gestures, gesturePage, "删除键 左滑 右滑 滑动删除 按距离 向后删 Delete 光标后 连删 长按 误触 撤回 恢复", section = "删除键"),
@@ -230,7 +231,6 @@ internal val SettingsSearchIndex: List<SettingsSearchEntry> = run {
         SettingsSearchEntry("删除键单独反向", gestures, gesturePage, "删除键 反向 反转 对调 上滑 下滑 清空 撤回 撤销 方向", section = "删除键"),
         SettingsSearchEntry("清空滑动距离", gestures, gesturePage, "删除键 清空 撤回 撤销 上滑 下滑 距离 灵敏度 滑不到 屏幕边缘", section = "删除键"),
         SettingsSearchEntry("打字中清空整个输入框", gestures, gesturePage, "清空 删除键 上滑 拼音 候选 输入框 全部 一次 跳过候选", section = "删除键"),
-        SettingsSearchEntry("滑动清空时跳过联想", gestures, gesturePage, "清空 正文 上滑 删除键 联想", section = "删除键"),
         SettingsSearchEntry("只清空光标前的内容", gestures, gesturePage, "清空 删除键 上滑 下滑 光标前 光标后 保留 部分 一半", section = "删除键"),
         SettingsSearchEntry("长按语言键切换输入法", gestures, gesturePage, "语言键 地球键 长按 切换输入法 选择输入法 其他输入法 系统输入法 KeePassDX 密码键盘", section = "时长与距离"),
         SettingsSearchEntry("长按语言键弹出列表", gestures, gesturePage, "语言键 切换语言 长按 时长 语言列表 秒", section = "时长与距离"),
@@ -246,7 +246,7 @@ internal val SettingsSearchIndex: List<SettingsSearchEntry> = run {
         // 输入 › 物理键盘
         SettingsSearchEntry("Ctrl + 空格", hardware, SettingsRoutes.HardwareKeyboard, "ctrl 空格 语言切换 快捷键 循环切换"),
         SettingsSearchEntry("单独轻按 Shift", hardware, SettingsRoutes.HardwareKeyboard, "shift 中英切换 快捷键 语言切换"),
-        SettingsSearchEntry("工具快捷键", hardware, SettingsRoutes.HardwareKeyboard, "快捷键 ctrl alt 标点 剪贴板 语音 alt+v alt+h"),
+        SettingsSearchEntry("工具快捷键", hardware, SettingsRoutes.HardwareKeyboard, "快捷键 ctrl alt 标点 剪贴板 语音 alt+v alt+h 关闭快捷键 快捷键冲突"),
         SettingsSearchEntry("候选翻页", hardware, SettingsRoutes.HardwareKeyboard, "翻页 上一页 下一页 减号 等号 中括号 逗号 句号"),
         SettingsSearchEntry("候选跟随光标", hardware, SettingsRoutes.HardwareKeyboard, "候选 跟随 光标 浮窗 浮条 位置"),
         SettingsSearchEntry("联想也显示在候选窗", hardware, SettingsRoutes.HardwareKeyboard, "联想 候选 位置 浮窗 工具条 跳 换位置 便携键盘 蓝牙键盘"),
@@ -279,7 +279,7 @@ internal val SettingsSearchIndex: List<SettingsSearchEntry> = run {
         SettingsSearchEntry("图标设置", theme, SettingsRoutes.Theme, "桌面图标 应用图标 底板 图标样式 图标联动 跟随主题色 跟随视觉样式 自己选 同步图标 恢复原有图标"),
         // 外观 › 候选词
         SettingsSearchEntry("候选字大小", candidates, candidatePage, "候选 字号 字体大小 文字大小"),
-        SettingsSearchEntry("候选词间距加宽", candidates, candidatePage, "候选 间距 间隔 太挤 密度 单字 宽松"),
+        SettingsSearchEntry("候选词间距加宽", candidates, candidatePage, "候选 间距 间隔 太挤 密度 单字 宽松 分隔线 竖线"),
         SettingsSearchEntry("候选栏取消按钮", candidates, candidatePage, "取消 左箭头 取消输入"),
         SettingsSearchEntry("联想关闭键用叉号", candidates, candidatePage, "联想 关闭联想 关闭键 叉 叉号 圆叉 左箭头"),
         SettingsSearchEntry("候选栏按钮按压高亮", candidates, candidatePage, "按住 反馈 取消键 关闭 展开箭头"),
@@ -312,7 +312,7 @@ internal val SettingsSearchIndex: List<SettingsSearchEntry> = run {
         // 智能 › 智能联想
         SettingsSearchEntry("启用智能联想", prediction, SettingsRoutes.SmartPrediction, "联想 开关 预测 基础联想"),
         SettingsSearchEntry("空格上屏联想候选", prediction, SettingsRoutes.SmartPrediction, "空格 联想 上屏", section = "功能开关"),
-        SettingsSearchEntry("退格直接删字", gestures, gesturePage, "退格 删除 删除键 删字 联想 收起联想 按两下", section = "删除键"),
+        SettingsSearchEntry("退格直接删字", gestures, gesturePage, "退格 删除 删除键 删字 联想 收起联想 按两下 清空 正文 上滑 下滑 滑动清空时跳过联想 跳过联想", section = "删除键"),
         SettingsSearchEntry("删字后给同音字", gestures, gesturePage, "退格 删除 删除键 删错 恢复 撤销 同音字 纠错", section = "删除键"),
         SettingsSearchEntry("连续联想", prediction, SettingsRoutes.SmartPrediction, "连续 联想 推理", section = "功能开关"),
         SettingsSearchEntry("单次联想", prediction, SettingsRoutes.SmartPrediction, "单次 联想 停止", section = "功能开关"),
@@ -369,6 +369,8 @@ internal val SettingsSearchIndex: List<SettingsSearchEntry> = run {
         page("插件市场", "$system › 扩展 › 插件", SettingsRoutes.MarketPlugins, "插件商店 下载 安装 API AI 翻译 帮写 回复 改写 润色 在线语音"),
         page("已安装的插件", "$system › 扩展 › 插件", SettingsRoutes.Plugins, "插件 已安装 插件管理 文件导入 xipk"),
         page("已安装的模型", "$system › 扩展 › 模型", SettingsRoutes.ModelLocal, "模型 识字 语音 手写 本地 下载 模型管理"),
+        SettingsSearchEntry("自动更新模型", "$system › 扩展 › 模型", SettingsRoutes.ModelLocal,
+            "模型 自动更新 新版本 升级 更新 Wi-Fi 手写 九键 词组模型 语音", section = "自动更新"),
         // 轻量版第一次用时下载，打开下载页；完整版内置在安装包里，打开已安装的模型。
         page("拍照识别模型", "$system › 扩展 › 模型",
             if (com.kingzcheung.xime.BuildConfig.BUNDLED_MODELS) SettingsRoutes.ModelLocal
@@ -386,6 +388,8 @@ internal val SettingsSearchIndex: List<SettingsSearchEntry> = run {
         SettingsSearchEntry("使用文档", about, SettingsRoutes.About, "说明 帮助 文档 教程 用法"),
         SettingsSearchEntry("检查更新", about, SettingsRoutes.About, "更新 升级 新版本 最新版本 下载 安装 版本号"),
         SettingsSearchEntry("自动检查更新", about, SettingsRoutes.About, "自动 更新 升级 新版本 提醒"),
+        SettingsSearchEntry("更新后提示更新内容", about, SettingsRoutes.About, "更新内容 更新日志 新功能 改了什么 公告 提示 首页"),
+        page("更新内容", about, SettingsRoutes.ReleaseNotes, "更新内容 更新日志 更新说明 发布说明 新功能 改了什么 公告 changelog"),
         page("隐私策略", about, SettingsRoutes.Privacy, "隐私 数据 联网 收集"),
         page("鸣谢", about, SettingsRoutes.Credits, "致谢 感谢 鸣谢 上游 Xime 雾凇 参考 来源 作者 credits"),
         page("开源许可证", about, SettingsRoutes.Licenses, "许可 开源 license 第三方"),
@@ -403,7 +407,7 @@ internal val SettingsSearchIndex: List<SettingsSearchEntry> = run {
             !(com.kingzcheung.xime.BuildConfig.DEV_TOOLS || com.kingzcheung.xime.BuildConfig.DEBUG)
     }.filter {
         // The elder package has no update entry (AppUpdater.supported).
-        com.kingzcheung.xime.update.AppUpdater.supported || it.title !in setOf("检查更新", "自动检查更新")
+        com.kingzcheung.xime.update.AppUpdater.supported || it.title !in setOf("检查更新", "自动检查更新", "更新后提示更新内容")
     }
 }
 
@@ -692,6 +696,7 @@ internal fun rememberSettingsSearchListState(): LazyListState = rememberLazyList
 /** 已有自己 [LazyListState] 的页面（如可拖动排序的语言列表）直接调这个。 */
 @Composable
 internal fun SettingsSearchAutoScroll(state: LazyListState) {
+    TypingTrialKeepsPosition(state)
     val request = SettingsSearchFocus.request
     LaunchedEffect(request) {
         val r = request ?: return@LaunchedEffect
@@ -699,6 +704,35 @@ internal fun SettingsSearchAutoScroll(state: LazyListState) {
         while (SettingsSearchFocus.isLive(r) && !SettingsSearchFocus.anyShown(r) && state.canScrollForward) {
             state.scrollBy(state.layoutInfo.viewportSize.height * 0.8f)
             withFrameNanos { }
+        }
+    }
+}
+
+/** 试打框关掉后，列表还要被焦点、键盘收起推着动这么久；这段时间里位置一变就放回去。 */
+internal const val TYPING_TRIAL_RESTORE_MS = 800L
+
+/**
+ * 打开试打框时记住列表位置，关掉后放回去。关试打框那一下焦点会落到下面的设置项上，列表跟着滚过去，
+ * 看起来就是返回后跳到了下面（11-08 反馈，主题与外观页）。只在关掉后的一小段时间里纠正，不影响之后的正常滚动。
+ */
+@Composable
+internal fun TypingTrialKeepsPosition(state: LazyListState) {
+    val open = LocalTypingTrialOpen.current
+    var saved by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    LaunchedEffect(open) {
+        if (open) {
+            saved = state.firstVisibleItemIndex to state.firstVisibleItemScrollOffset
+            return@LaunchedEffect
+        }
+        val (index, offset) = saved ?: return@LaunchedEffect
+        saved = null
+        val start = withFrameNanos { it }
+        var now = start
+        while (now - start < TYPING_TRIAL_RESTORE_MS * 1_000_000) {
+            if (state.firstVisibleItemIndex != index || state.firstVisibleItemScrollOffset != offset) {
+                state.scrollToItem(index, offset)
+            }
+            now = withFrameNanos { it }
         }
     }
 }

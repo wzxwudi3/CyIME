@@ -15,14 +15,21 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.kingzcheung.xime.settings.FrostedGlassConfig
+import com.kingzcheung.xime.ui.keyboard.legibleForTheme
 import com.kingzcheung.xime.ui.theme.SamsungWindowBlur
 import kotlin.math.roundToInt
+import com.kingzcheung.xime.platform.AndroidPlatform
 
 /** Edits a preview draft, never writes preferences before Apply. */
 @Composable
 internal fun FrostedThemeControls(config: FrostedGlassConfig, isDark: Boolean,
     blurAvailable: Boolean = rememberCrossWindowBlurAvailable(), compact: Boolean = false,
+    themeId: String? = null,
     onChange: (FrostedGlassConfig) -> Unit) {
+    // 调得过透时键盘会自动加深（legibleForTheme）：滑条旁写出实际用的值，不然拖到很低看着没变化（GitHub #63）。
+    val effective = remember(config, themeId, isDark) {
+        themeId?.let { runCatching { config.legibleForTheme(it, isDark) }.getOrNull() }
+    }
     Column(verticalArrangement = Arrangement.spacedBy(if (compact) 2.dp else 8.dp)) {
         if (!compact) Text(if (isDark) "深色玻璃效果" else "浅色玻璃效果", style = MaterialTheme.typography.titleMedium)
         GlassSlider("模糊强度", "${config.blurRadiusDp.roundToInt()} dp" +
@@ -32,20 +39,30 @@ internal fun FrostedThemeControls(config: FrostedGlassConfig, isDark: Boolean,
         // 白色玻璃底色最少 WHITE_GLASS_PANEL_OPACITY（见 FrostedKeyColors），没拖过时写出实际值；
         // 在浅色页拖过就按滑条显示，工具栏也跟着（lightPanelCustom）。
         val whiteGlassFloor = com.kingzcheung.xime.ui.keyboard.WHITE_GLASS_PANEL_OPACITY
+        val backgroundActual = effective?.backgroundOpacity
+            ?: if (!isDark && !config.lightPanelCustom && config.backgroundOpacity < whiteGlassFloor) whiteGlassFloor else null
         GlassSlider("背景不透明度", "${(config.backgroundOpacity * 100).roundToInt()}%" +
-            if (!isDark && !config.lightPanelCustom && config.backgroundOpacity < whiteGlassFloor)
-                " · 实际 ${(whiteGlassFloor * 100).roundToInt()}%" else "",
+            actualSuffix(config.backgroundOpacity, backgroundActual),
             config.backgroundOpacity) {
             onChange(config.copy(backgroundOpacity = (it * 100).roundToInt() / 100f,
                 lightPanelCustom = config.lightPanelCustom || !isDark))
         }
-        GlassSlider("按键不透明度", "${(config.keyOpacity * 100).roundToInt()}%", config.keyOpacity) {
+        GlassSlider("按键不透明度", "${(config.keyOpacity * 100).roundToInt()}%" +
+            actualSuffix(config.keyOpacity, effective?.keyOpacity), config.keyOpacity) {
             onChange(config.copy(keyOpacity = (it * 100).roundToInt() / 100f))
         }
         if (!compact) Text("浅色、深色各自保存；取消不保存。文字和图标不随这两个透明度淡化。" +
             "调得过透时，键盘会自动加深到在白色和黑色页面上都能看清按键文字。",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+}
+
+/** 实际用的值比滑条高（自动加深、白色玻璃补底）时写「· 实际 N%」；差不到 1% 不写。 */
+internal fun actualSuffix(set: Float, actual: Float?): String {
+    if (actual == null || !actual.isFinite()) return ""
+    val shown = (set * 100).roundToInt()
+    val real = (actual * 100).roundToInt()
+    return if (real > shown) " · 实际 $real%" else ""
 }
 
 @Composable
@@ -63,7 +80,7 @@ private fun GlassSlider(label: String, valueLabel: String, value: Float,
 
 @Composable
 private fun rememberCrossWindowBlurAvailable(): Boolean {
-    if (android.os.Build.VERSION.SDK_INT < 31) return false
+    if (!AndroidPlatform.windowBlur) return false
     val context = LocalContext.current
     val manager = remember(context) { context.getSystemService(android.view.WindowManager::class.java) }
     var available by remember(manager) { mutableStateOf(runCatching { manager?.isCrossWindowBlurEnabled == true }.getOrDefault(false)) }

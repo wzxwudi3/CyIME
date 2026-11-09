@@ -8,8 +8,11 @@ object CyimeInputDefaults {
     fun firstDefaults(freshInstall: Boolean): List<String> = if (freshInstall)
         listOf("rime_ice", "double_pinyin_flypy", "t9_pinyin", "pinyin_14jian") else recommended
 
-    /** 「已安装的方案」里关着也直接列出、不收进「其他已安装方案（高级）」的。 */
-    val listedWhenOff: List<String> get() = recommended + "pinyin_14jian" + doublePinyin + shapeAndStroke
+    /**
+     * 「已安装的方案」里关着也直接列出、不收进「其他已安装方案（高级）」的。
+     * 英文单词方案（11-09）也在这里：关着也列在「语言与方案」英文的方案里，点了才启用，不加进默认启用。
+     */
+    val listedWhenOff: List<String> get() = recommended + "pinyin_14jian" + doublePinyin + shapeAndStroke + InputModes.ENGLISH_WORDS
 
     /**
      * 形码、笔画、注音（用户 11-04：收在「其他已安装方案」里，以为没有）：随包的仓颉、速成、笔画、注音和下载后的五笔
@@ -17,7 +20,7 @@ object CyimeInputDefaults {
      */
     val shapeAndStroke = listOf("wubi86", "wubi98", "cyime_cangjie", "cyime_quick", "stroke", "cyime_zhuyin")
     val dependencies = setOf("cyime_t9_english", "cyime_k14_english", "cyime_omission", "cyime_letter_swap",
-        "cyime_digit_edit", "cyime_digit_tap", "melt_eng", "radical_pinyin", "numbers", "handwriting")
+        "cyime_digit_edit", "cyime_digit_tap", "melt_eng", "radical_pinyin", "numbers", "handwriting", "stroke_phrase")
 
     /**
      * 方案 × 布局的组合配置：所需的方案和布局都启用时自动启用，不作为独立条目单独开关。

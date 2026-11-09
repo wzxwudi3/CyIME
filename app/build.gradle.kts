@@ -17,6 +17,7 @@ apply(from = "build-logic/tasks-bundled-models.gradle.kts")
 apply(from = "build-logic/tasks-builtin-sync.gradle.kts")
 apply(from = "build-logic/tasks-plugin-dev.gradle.kts")
 apply(from = "build-logic/tasks-japanese.gradle.kts")
+apply(from = "build-logic/tasks-offline-translate.gradle.kts")
 apply(from = "build-logic/tasks-chinese.gradle.kts")
 apply(from = "build-logic/tasks-stroke.gradle.kts")
 apply(from = "build-logic/tasks-cangjie.gradle.kts")
@@ -28,6 +29,18 @@ val preparePluginMarket by tasks.registering(Sync::class) {
     into(layout.buildDirectory.dir("generated/plugin-market-assets"))
 }
 tasks.named("preBuild").configure { dependsOn(preparePluginMarket) }
+
+// 关于 › 更新内容：发 Release 用的 docs/<x.y.z>.md 一起打进安装包，看说明不联网。
+val prepareReleaseNotes by tasks.registering(Sync::class) {
+    from(rootProject.file("docs")) {
+        include("*.md")
+        eachFile { if (!name.matches(Regex("""\d+\.\d+\.\d+\.md"""))) exclude() }
+        into("release-notes")
+    }
+    includeEmptyDirs = false
+    into(layout.buildDirectory.dir("generated/release-notes-assets"))
+}
+tasks.named("preBuild").configure { dependsOn(prepareReleaseNotes) }
 
 // 获取 Git 提交哈希
 fun getGitHash(): String {
@@ -54,12 +67,15 @@ if (keystorePropertiesFile.exists()) {
 android {
     namespace = "com.kingzcheung.xime"
     sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/plugin-market-assets").get().asFile)
+    sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/release-notes-assets").get().asFile)
     if (providers.gradleProperty("bundleModels").orNull == "true") {
         sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/bundled-model-assets").get().asFile)
     }
     sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/japanese-azookey-assets").get().asFile)
     // libCyAzooKey.so per ABI (tasks-japanese.gradle.kts), loaded by the Japanese Rime translator.
     sourceSets.getByName("main").jniLibs.srcDir(layout.buildDirectory.dir("generated/azookey-jniLibs").get().asFile)
+    // libcytranslate.so (arm64-v8a, x86_64; tasks-offline-translate.gradle.kts): offline translation engine.
+    sourceSets.getByName("main").jniLibs.srcDir(layout.buildDirectory.dir("generated/translate-jniLibs").get().asFile)
     sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/chinese-assets").get().asFile)
     sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/stroke-assets").get().asFile)
     sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/cangjie-assets").get().asFile)
@@ -86,8 +102,8 @@ android {
         // 按发布批次定号：兼容修复升 PATCH，兼容功能升 MINOR 并归零 PATCH。
         // 不兼容变更升 MAJOR；日常编辑不逐次升号。完整规则见 docs/packaging.md。
         // versionCode 是独立递增的交付序号；同批普通版与内置版共用。
-        versionCode = 20261421
-        versionName = "1.15.68"
+        versionCode = 20261426
+        versionName = "1.15.73"
 
 
         // Isolated Compose rendering on a local x86 emulator; ordinary device tests keep the full app.
@@ -156,6 +172,15 @@ android {
             if (keystorePropertiesFile.exists()) {
                 signingConfig = signingConfigs.getByName("release")
             }
+        }
+        // 离线构建类型：initWith(release)，由 src/offline 的 manifest 叠加层移除 INTERNET 权限。
+        // 产物（assembleOffline）供高敏感环境使用：系统层面禁止一切联网，模型/词库下载、
+        // 扩展商店、检查更新、在线语音、样本贡献、剪贴板同步在该构建中均不可用，
+        // 需配合完整版离线模型内置包。现有 assembleDebug/assembleRelease 任务不受影响。
+        create("offline") {
+            initWith(getByName("release"))
+            // :plugin-core 等 library 模块只有 debug/release，offline 变体回落到 release。
+            matchingFallbacks += listOf("release")
         }
     }
     compileOptions {

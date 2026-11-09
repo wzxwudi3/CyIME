@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -43,6 +44,8 @@ fun LanguageSettingsContent(onOpenSchemaResources: () -> Unit = {}, onOpenDouble
     var orderedLanguages by remember { mutableStateOf(InputModes.languageOrder(context)) }
     var saving by remember { mutableStateOf(false) }
     var expandedLanguage by remember { mutableStateOf<InputLanguage?>(orderedLanguages.firstOrNull()) }
+    // 没开的西、德、法、意、俄、韩语默认收在「更多语言」里（用户 11-08：一般人用不着这么多）。
+    var moreLanguagesOpen by rememberSaveable { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
     val profilesModel: com.kingzcheung.xime.viewmodel.SchemaSettingsViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
     val profilesState by profilesModel.uiState.collectAsState()
@@ -77,7 +80,12 @@ fun LanguageSettingsContent(onOpenSchemaResources: () -> Unit = {}, onOpenDouble
                 color = MaterialTheme.colorScheme.onSurfaceVariant) }
             // 拖动顺序要等下一帧才跟上开关：刚关掉的语言还在 dragOrder.order 里，又出现在未启用那段，
             // 同一个 key 出现两次，LazyColumn 直接崩溃、设置页重开（11-02 关西班牙语）。这里只认当前真启用的。
-            items(languageRows(dragOrder.order + orderedLanguages.map { it.id }, languages), key = { it }) { id ->
+            val rows = languageRows(dragOrder.order + orderedLanguages.map { it.id }, languages)
+            items(languageListRows(rows, languages, moreLanguagesOpen), key = { it }) { id ->
+                if (id == MORE_LANGUAGES_ROW) {
+                    MoreLanguagesRow(foldedLanguages(rows, languages), moreLanguagesOpen) { moreLanguagesOpen = !moreLanguagesOpen }
+                    return@items
+                }
                 val language = InputLanguage.entries.first { it.id == id }
                 val checked = language in languages
                 val canChange = language != InputLanguage.ENGLISH && !saving
@@ -130,7 +138,10 @@ fun LanguageSettingsContent(onOpenSchemaResources: () -> Unit = {}, onOpenDouble
                             val current = SettingsPreferences.getCurrentSchema(context)
                             val active = current.isNotBlank() && !com.kingzcheung.xime.ui.keyboard.isHandwritingSchema(current) &&
                                 InputModes.languageOf(current, availableProfiles) == language
-                            if (entry.schemaId in profilesState.enabledSchemas) {
+                            if (entry.schemaId == InputModes.ENGLISH) {
+                                // 英文直接输入不是 Rime 方案，不启用、不部署、不写成当前方案；切到英文时按这里的选择开 ascii。
+                                message = "已保存：${language.displayName} · ${entry.selectionLabel}，下次切换到该语言时使用"
+                            } else if (entry.schemaId in profilesState.enabledSchemas) {
                                 if (active) SettingsPreferences.setCurrentSchema(context, entry.schemaId, language)
                                 message = "已保存：${language.displayName} · ${entry.selectionLabel}，" +
                                     if (active) "键盘下次弹出时使用" else "下次切换到该语言时使用"
@@ -172,7 +183,8 @@ fun LanguageSettingsContent(onOpenSchemaResources: () -> Unit = {}, onOpenDouble
                         if (index > 0) HorizontalDivider()
                         SettingsItem(Icons.TwoTone.Translate, schema.name, "方案没写语言，点开选一次",
                             onClick = { picking = schema }, showArrow = true,
-                            status = if (schema.languageChosen) schema.language.displayName else InputLanguage.UNSPECIFIED.displayName,
+                            status = if (schema.languageChosen || schema.language == InputLanguage.UNSPECIFIED) schema.language.displayName
+                                else "${schema.language.displayName}(自动)",
                             searchKey = "导入方案的语言:${schema.schemaId}")
                     }
                 }
@@ -210,6 +222,36 @@ fun LanguageSettingsContent(onOpenSchemaResources: () -> Unit = {}, onOpenDouble
             }
             item { if (message.isNotEmpty()) Text(message, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             item { Spacer(Modifier.height(16.dp)) }
+        }
+    }
+}
+
+internal const val MORE_LANGUAGES_ROW = "more-languages"
+
+/** 收进「更多语言」的：没开启的字母类语言（西、德、法、意、俄、韩语）。开着的、中文、日语照常列出。 */
+internal fun foldedLanguages(rows: List<String>, enabled: Set<InputLanguage>): List<String> =
+    rows.filter { id -> enabled.none { it.id == id } && InputLanguage.fromId(id)?.let { LetterLanguage.of(it) } != null }
+
+/** 实际列出的行：收起时只到「更多语言」那一行，展开时它下面接着列这些语言。 */
+internal fun languageListRows(rows: List<String>, enabled: Set<InputLanguage>, moreOpen: Boolean): List<String> {
+    val folded = foldedLanguages(rows, enabled)
+    if (folded.isEmpty()) return rows
+    return rows.filterNot { it in folded } + MORE_LANGUAGES_ROW + (if (moreOpen) folded else emptyList())
+}
+
+@Composable
+private fun MoreLanguagesRow(folded: List<String>, open: Boolean, onToggle: () -> Unit) {
+    val names = folded.mapNotNull { InputLanguage.fromId(it)?.displayName }.joinToString("、")
+    Surface(modifier = Modifier.fillMaxWidth().testTag("language-more"), shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow) {
+        Row(Modifier.fillMaxWidth().visualMaterial(VisualStyles.current, 12.dp, level = MaterialLevel.RAISED)
+            .heightIn(min = 72.dp).clickable(onClick = onToggle).padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                Text("更多语言", style = MaterialTheme.typography.titleMedium)
+                Text(names, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Icon(if (open) Icons.Default.ExpandLess else Icons.Default.ExpandMore, if (open) "收起更多语言" else "展开更多语言")
         }
     }
 }

@@ -444,7 +444,8 @@ fun CandidateBar(
         }
 
         if (state is CandidateBarState.ClipboardDisplay) {
-            ClipboardPreviewBar(state.candidates, protectedVisuals, callbacks, iconButtonContainer, state.image)
+            ClipboardPreviewBar(state.candidates, protectedVisuals, callbacks, iconButtonContainer, state.image,
+                extractedCount = state.extractedCount)
             return@Column
         }
 
@@ -472,10 +473,14 @@ fun CandidateBar(
         // 同心：胶囊圆角 = 键盘卡片圆角 - 胶囊离栏边的距离（上下各 6dp），和卡片四角同心。
         val edgeCorner = if (edgeStyle == EdgeButtonStyle.CONCENTRIC) FloatingKeyboardCardCorner - 6.dp else null
         // 窄键盘两端锚定在候选箭头的中心，中间工具均分余宽。宽键盘的所有工具仍各占完整一格。
+        // 两者之间不再在 600dp 一步跳变：收起键从展开键的圆按宽度逐渐拉成等分格胶囊（用户 11-09，#263）。
         val toolbarSlot = when {
             state !is CandidateBarState.Idle || idleToolbarCell == null -> null
-            toolbarRowWidth < 600.dp -> edgeSlot ?: 40.dp
-            else -> idleToolbarCell
+            else -> {
+                val blend = ((toolbarRowWidth - TOOLBAR_SLOT_BLEND_START) /
+                    (TOOLBAR_SLOT_BLEND_FULL - TOOLBAR_SLOT_BLEND_START)).coerceIn(0f, 1f)
+                androidx.compose.ui.unit.lerp(edgeSlot ?: 40.dp, idleToolbarCell, blend)
+            }
         }
         Row(
             modifier = Modifier
@@ -591,6 +596,8 @@ fun CandidateBar(
             } else if (state !is CandidateBarState.Idle) BoxWithConstraints(Modifier.weight(1f)) {
                 val showComments = candidateCommentsVisible(maxWidth.value, density.fontScale,
                     candidateTextSize.toFloat(), commentsAllowed)
+                val showDividers = candidateDividersShown(4.dp, candidateItemPadding)
+                val itemDividerColor = candidateDividerColor(protectedVisuals.textColor)
                 LazyRow(
                     modifier = Modifier.fillMaxWidth(),
                     state = candidateListState,
@@ -622,7 +629,9 @@ fun CandidateBar(
                             fontSize = candidateTextSize.sp,
                             candidateFontFamily = candidateFontFamily,
                             commentFontFamily = commentFontFamily,
-                            correction = if (state is CandidateBarState.ChineseCandidates) LocalCorrectedCandidates.current[candidate].orEmpty() else "",
+                            correction = if (showComments && state is CandidateBarState.ChineseCandidates) LocalCorrectedCandidates.current[candidate].orEmpty() else "",
+                            modifier = if (showDividers && index > 0) Modifier.candidateLeadingDivider(itemDividerColor,
+                                4.dp, candidateTextSize.sp) else Modifier,
                             horizontalPadding = candidateItemPadding,
                         )
                     }
@@ -659,7 +668,9 @@ fun CandidateBar(
                             fontSize = candidateTextSize.sp,
                             candidateFontFamily = candidateFontFamily,
                             commentFontFamily = commentFontFamily,
-                            modifier = Modifier.testTag("bar-association:$index"),
+                            modifier = Modifier.testTag("bar-association:$index").then(
+                                if (showDividers && index > 0) Modifier.candidateLeadingDivider(itemDividerColor,
+                                    4.dp, candidateTextSize.sp) else Modifier),
                             horizontalPadding = candidateItemPadding,
                         )
                     }
@@ -862,8 +873,14 @@ private fun ClipboardPreviewBar(
     callbacks: CandidateBarCallbacks,
     iconButtonContainer: Color,
     image: com.kingzcheung.xime.clipboard.ClipboardImage? = null,
+    /** [candidates] 开头这几项是提取出来的链接、长数字：单独放在前面的短胶囊，后面的长胶囊放原文（用户 11-08）。 */
+    extractedCount: Int = 0,
 ) {
     val previews = remember(candidates) { candidates.map { it.replace(Regex("[\\r\\n]+"), " ") } }
+    // 有图片时照旧只有图片那一个胶囊。
+    val splitAt = if (image != null) 0 else extractedCount.coerceIn(0, previews.size)
+    val extracted = previews.subList(0, splitAt)
+    val originals = previews.subList(splitAt, previews.size)
     val textMeasurer = rememberTextMeasurer()
     val textStyle = LocalTextStyle.current.merge(TextStyle(fontSize = 15.sp))
     val density = LocalDensity.current
@@ -874,61 +891,87 @@ private fun ClipboardPreviewBar(
     val capsuleColor = visuals.preeditBackgroundColor.takeIf { it != Color.Unspecified }
         ?: MaterialTheme.colorScheme.surfaceContainer
     val liquidEdge = com.kingzcheung.xime.ui.theme.LiquidGlass.surfacesOn()
+    val capsuleModifier = Modifier.heightIn(min = 36.dp)
+        .clip(CircleShape)
+        .background(capsuleColor)
+        // 液态玻璃：强调色描边换成按键同款细亮边。
+        .then(if (liquidEdge) Modifier.liquidGlassEdge(CAPSULE_RADIUS)
+            else Modifier.border(1.dp, visuals.accentColor.copy(alpha = 0.45f), CircleShape))
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         KeyboardBackButton({ callbacks.onDismissClipboardPreview?.invoke() },
             iconButtonContainer, visuals.textColor, label = "返回工具栏")
         BoxWithConstraints(Modifier.weight(1f).padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+            val itemGapPx = with(density) { 16.dp.roundToPx() }
+            /** 一串预览排成一行要多宽；超过 [limitPx] 或有很长的一项就按 [limitPx] 算（反正要横滑）。 */
+            fun rowTextWidth(items: List<String>, limitPx: Int): Int {
+                var width = 0
+                for ((index, preview) in items.withIndex()) {
+                    if (width >= limitPx || preview.length > 80) return limitPx
+                    val itemWidth = textMeasurer.measure(preview, style = textStyle,
+                        maxLines = 1, softWrap = false).size.width
+                    width = (width + itemWidth + if (index == 0) 0 else itemGapPx).coerceAtMost(limitPx)
+                }
+                return width
+            }
             // Reserve space for both icons and the scroll area's padding. Short previews
             // size the capsule to their text; long previews keep the full scroll viewport.
             val chromeWidth = 82.dp
-            val maxTextWidthPx = with(density) { (maxWidth - chromeWidth).coerceAtLeast(0.dp).roundToPx() }
-            var textWidthPx = if (image != null) with(density) { 64.dp.roundToPx() }.coerceAtMost(maxTextWidthPx) else 0
-            if (image == null) for ((index, preview) in previews.withIndex()) {
-                if (textWidthPx >= maxTextWidthPx || preview.length > 80) {
-                    textWidthPx = maxTextWidthPx
-                    break
-                }
-                val itemWidth = textMeasurer.measure(preview, style = textStyle,
-                    maxLines = 1, softWrap = false).size.width
-                val itemPadding = if (index == 0) 0 else with(density) { 16.dp.roundToPx() }
-                textWidthPx = (textWidthPx + itemWidth + itemPadding).coerceAtMost(maxTextWidthPx)
-            }
-            val capsuleWidth = (chromeWidth + with(density) { textWidthPx.toDp() }).coerceAtMost(maxWidth)
-            Row(
-                Modifier.width(capsuleWidth).heightIn(min = 36.dp).testTag("clipboard-preview-pill")
-                    .clip(CircleShape)
-                    .background(capsuleColor)
-                    // 液态玻璃：强调色描边换成按键同款细亮边。
-                    .then(if (liquidEdge) Modifier.liquidGlassEdge(CAPSULE_RADIUS)
-                        else Modifier.border(1.dp, visuals.accentColor.copy(alpha = 0.45f), CircleShape))
-                    .padding(start = 12.dp, end = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Icon(Icons.Default.ContentPaste, contentDescription = null,
-                    tint = visuals.textColor, modifier = Modifier.size(18.dp))
-                if (image != null) {
-                    ClipboardImagePreview(image,
-                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
-                        onPaste = { callbacks.onClipboardImageSelect?.invoke(image) })
-                } else LazyRow(Modifier.weight(1f).padding(horizontal = 8.dp).testTag("clipboard-preview-scroll"),
-                    overscrollEffect = null) {
-                    itemsIndexed(previews) { index, preview ->
-                        // 预览可横向滚动全部内容；换行仅在显示时折成空格，粘贴仍使用原文。
-                        Text(preview, color = visuals.textColor, fontSize = 15.sp, maxLines = 1,
-                            softWrap = false,
-                            modifier = Modifier.testTag("clipboard-preview-text:$index")
-                                .clickable { callbacks.onCandidateSelect(index) }
-                                .padding(vertical = verticalTextPadding, horizontal = if (index == 0) 0.dp else 8.dp))
+            val extractedChrome = 24.dp
+            val availablePx = with(density) { maxWidth.roundToPx() }
+            val capsuleGapPx = if (extracted.isEmpty()) 0 else with(density) { CLIPBOARD_CAPSULE_GAP.roundToPx() }
+            val chromePx = with(density) { chromeWidth.roundToPx() }
+            val extractedChromePx = with(density) { extractedChrome.roundToPx() }
+            val originalWantPx = chromePx + if (image != null) with(density) { 64.dp.roundToPx() }
+                .coerceAtMost((availablePx - chromePx).coerceAtLeast(0)) else rowTextWidth(originals, availablePx)
+            val extractedWantPx = if (extracted.isEmpty()) 0 else extractedChromePx + rowTextWidth(extracted, availablePx)
+            val (extractedWidthPx, originalWidthPx) = clipboardCapsuleWidths(availablePx, capsuleGapPx, extractedWantPx, originalWantPx)
+            Row(horizontalArrangement = Arrangement.spacedBy(CLIPBOARD_CAPSULE_GAP), verticalAlignment = Alignment.CenterVertically) {
+                if (extracted.isNotEmpty()) {
+                    // 前面的短胶囊：提取出来的链接、长数字，太长同样可以左右拖着看。
+                    LazyRow(capsuleModifier.width(with(density) { extractedWidthPx.toDp() })
+                        .testTag("clipboard-extracted-pill").padding(horizontal = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically, overscrollEffect = null) {
+                        itemsIndexed(extracted) { index, preview ->
+                            Text(preview, color = visuals.accentColor, fontSize = 15.sp, maxLines = 1,
+                                softWrap = false,
+                                modifier = Modifier.testTag("clipboard-preview-text:$index")
+                                    .clickable { callbacks.onCandidateSelect(index) }
+                                    .padding(vertical = verticalTextPadding, horizontal = if (index == 0) 0.dp else 8.dp))
+                        }
                     }
                 }
-                Box(Modifier.size(30.dp).clip(CircleShape)
-                    .then(if (image != null) Modifier.testTag("clipboard-image-more") else Modifier)
-                    .clickable {
-                        (callbacks.onOpenClipboard ?: if (image != null) callbacks.onExpandClipboardImages else null)?.invoke()
-                    },
-                    contentAlignment = Alignment.Center) {
-                    Icon(Icons.AutoMirrored.Filled.FormatListBulleted, contentDescription = "打开剪贴板",
-                        tint = visuals.accentColor, modifier = Modifier.size(22.dp))
+                Row(
+                    capsuleModifier.width(with(density) { originalWidthPx.toDp() }).testTag("clipboard-preview-pill")
+                        .padding(start = 12.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Icon(Icons.Default.ContentPaste, contentDescription = null,
+                        tint = visuals.textColor, modifier = Modifier.size(18.dp))
+                    if (image != null) {
+                        ClipboardImagePreview(image,
+                            modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                            onPaste = { callbacks.onClipboardImageSelect?.invoke(image) })
+                    } else LazyRow(Modifier.weight(1f).padding(horizontal = 8.dp).testTag("clipboard-preview-scroll"),
+                        overscrollEffect = null) {
+                        itemsIndexed(originals) { index, preview ->
+                            // 预览可横向滚动全部内容；换行仅在显示时折成空格，粘贴仍使用原文。
+                            val candidateIndex = splitAt + index
+                            Text(preview, color = visuals.textColor, fontSize = 15.sp, maxLines = 1,
+                                softWrap = false,
+                                modifier = Modifier.testTag("clipboard-preview-text:$candidateIndex")
+                                    .clickable { callbacks.onCandidateSelect(candidateIndex) }
+                                    .padding(vertical = verticalTextPadding, horizontal = if (index == 0) 0.dp else 8.dp))
+                        }
+                    }
+                    Box(Modifier.size(30.dp).clip(CircleShape)
+                        .then(if (image != null) Modifier.testTag("clipboard-image-more") else Modifier)
+                        .clickable {
+                            (callbacks.onOpenClipboard ?: if (image != null) callbacks.onExpandClipboardImages else null)?.invoke()
+                        },
+                        contentAlignment = Alignment.Center) {
+                        Icon(Icons.AutoMirrored.Filled.FormatListBulleted, contentDescription = "打开剪贴板",
+                            tint = visuals.accentColor, modifier = Modifier.size(22.dp))
+                    }
                 }
             }
         }
@@ -942,6 +985,21 @@ private fun ClipboardPreviewBar(
             Spacer(Modifier.size(40.dp))
         }
     }
+}
+
+private val CLIPBOARD_CAPSULE_GAP = 8.dp
+
+/**
+ * 剪贴板两个胶囊各占多宽（像素）：放得下就各按内容宽；放不下时提取胶囊最多拿 40%（原文短就多给它一些），
+ * 剩下的给原文胶囊，两边内容多出来的都靠左右拖着看。没有提取项时提取胶囊为 0，原文胶囊和以前一样。
+ */
+internal fun clipboardCapsuleWidths(availablePx: Int, gapPx: Int, extractedWantPx: Int, originalWantPx: Int): Pair<Int, Int> {
+    if (extractedWantPx <= 0) return 0 to originalWantPx.coerceIn(0, availablePx.coerceAtLeast(0))
+    val room = (availablePx - gapPx).coerceAtLeast(0)
+    if (extractedWantPx + originalWantPx <= room) return extractedWantPx to originalWantPx
+    val extractedCap = maxOf((room * 0.4f).toInt(), room - originalWantPx)
+    val extracted = extractedWantPx.coerceAtMost(extractedCap)
+    return extracted to (room - extracted).coerceAtMost(originalWantPx)
 }
 
 /** Use the exact same explicit primary style for rendering and width measurement. */
@@ -1077,6 +1135,30 @@ internal fun candidateSecondaryText(comment: String, correction: String): Annota
 /** 候选两侧的默认留白。 */
 internal val CANDIDATE_ITEM_PADDING = 4.dp
 
+/** 两个候选之间的空白（间隔加两边留白）到这么宽才画分隔竖线：默认约 12dp 不画，「候选词间距加宽」约 23dp 画。 */
+internal val CANDIDATE_DIVIDER_MIN_GAP = 18.dp
+
+/** 候选之间空得开时，像 Gboard 那样中间画一条浅色竖线；挤的时候不画（用户 11-09）。 */
+internal fun candidateDividersShown(itemSpacing: androidx.compose.ui.unit.Dp, itemPadding: androidx.compose.ui.unit.Dp): Boolean =
+    itemSpacing + itemPadding * 2 >= CANDIDATE_DIVIDER_MIN_GAP
+
+/** 分隔竖线的颜色：候选文字色压到很淡，随主题；和展开页格子之间的竖线同一个颜色。 */
+internal fun candidateDividerColor(textColor: Color): Color = textColor.copy(alpha = 0.12f)
+
+/**
+ * 在这个候选左边那段 [spacing] 宽的间隔正中画竖线，约一个字高，上下居中。
+ * 画在候选自己的位置之外，不占宽度、不挡点按，候选怎么排都不变。按整像素画，细线不发虚。
+ */
+internal fun Modifier.candidateLeadingDivider(color: Color, spacing: androidx.compose.ui.unit.Dp,
+    fontSize: androidx.compose.ui.unit.TextUnit): Modifier = drawBehind {
+    val width = 1.dp.toPx().roundToInt().coerceAtLeast(1)
+    val left = (-spacing.toPx() / 2f - width / 2f).roundToInt().toFloat()
+    val height = minOf(fontSize.toPx(), size.height).roundToInt().toFloat()
+    val top = ((size.height - height) / 2f).roundToInt().toFloat()
+    drawRect(color, androidx.compose.ui.geometry.Offset(left, top),
+        androidx.compose.ui.geometry.Size(width.toFloat(), height))
+}
+
 /** 「候选词间距加宽」时每侧留白：按字号加大，两个候选之间（含 4dp 间隔）约空出 1.2 个字。 */
 internal fun wideCandidateItemPadding(fontSize: androidx.compose.ui.unit.Dp): androidx.compose.ui.unit.Dp =
     CANDIDATE_ITEM_PADDING + fontSize * 0.3f
@@ -1184,7 +1266,7 @@ private fun Modifier.glassStripBoost(alpha: Float): Modifier {
 /** 非聚焦窗口提供真实触控区域，点击编码不会抢走宿主编辑框焦点。 */
 @Composable
 private fun PreeditPreview(text: String, visuals: CandidateBarVisuals, onEdit: (() -> Unit)?, bubbleColor: Color,
-    /** 编码刚清空、窗口还没拆：气泡画成全透明，不能点，也不再垫模糊（见 [PreeditBubbleHost]）。 */
+    /** 编码刚清空、窗口还没拆：气泡画成全透明，不能点，模糊也同时调成全透明（见 [PreeditBubbleHost]）。 */
     hidden: Boolean = false) {
     val density = LocalDensity.current
     // 放大后的候选栏里 dp 变大了，按屏宽限宽要换回同样的像素宽度。
@@ -1218,11 +1300,11 @@ private fun PreeditPreview(text: String, visuals: CandidateBarVisuals, onEdit: (
         }
     }
     val glass = LocalKeyboardInputPreferences.current.frostedGlass.normalized()
-    if (!hidden && glass.enabled && glass.blurRadiusDp >= 1f) {
+    if (glass.enabled && glass.blurRadiusDp >= 1f) {
         // 气泡内容最少 44dp 高、上下各留 6dp，真正的底色块在中间，圆角 4dp（见下面 PreeditLabel）。
         val inset = with(density) { 6.dp.roundToPx() }
         PreeditBubbleBlur(bubbleBounds.value?.let { IntRect(it.left, it.top + inset, it.right, it.bottom - inset) },
-            glass.blurRadiusDp, with(density) { 4.dp.toPx() })
+            glass.blurRadiusDp, with(density) { 4.dp.toPx() }, hidden)
     }
     Popup(popupPositionProvider = positionProvider,
         properties = PopupProperties(focusable = false, dismissOnBackPress = false,
@@ -1275,9 +1357,16 @@ internal fun preeditBubbleColor(surface: Color, key: Color, blurBehind: Boolean,
 
 internal const val PREEDIT_BUBBLE_GLASS_ALPHA = 0.9f
 
+/**
+ * 编码清空、气泡变透明的那几帧里模糊窗口的透明度。模糊也是单独的小窗口，原来这一刻就拆掉，
+ * 系统拿它最后一帧放退出动画，模糊比拼音晚一拍才没（用户 11-08 转来的反馈）。现在同一帧调成全透明，
+ * 跟气泡窗口一起拆，退出动画播的也是空白。
+ */
+internal fun preeditBubbleBlurAlpha(hidden: Boolean): Float = if (hidden) 0f else 1f
+
 /** 拼音气泡下面的实时模糊：和键盘卡片的玻璃同一种子窗口，放在输入法窗口下面，只模糊气泡那一块应用画面。 */
 @Composable
-private fun PreeditBubbleBlur(region: IntRect?, blurRadiusDp: Float, cornerRadiusPx: Float) {
+private fun PreeditBubbleBlur(region: IntRect?, blurRadiusDp: Float, cornerRadiusPx: Float, hidden: Boolean = false) {
     val view = LocalView.current
     val context = LocalContext.current
     // 模糊半径按屏幕真实密度算，和键盘卡片那块一样；候选栏放大只放大气泡，不改模糊强度。
@@ -1290,6 +1379,7 @@ private fun PreeditBubbleBlur(region: IntRect?, blurRadiusDp: Float, cornerRadiu
         onDispose { blur.dispose() }
     }
     SideEffect {
+        blur.setOpacity(preeditBubbleBlurAlpha(hidden))
         blur.configure(true, radiusPx, cornerRadiusPx)
         blur.setRegion(region?.let { android.graphics.Rect(it.left, it.top, it.right, it.bottom) })
     }
@@ -1516,13 +1606,13 @@ internal fun FixedCandidateStrip(
             val right = (r - stripOriginX).coerceIn(left, constraints.maxWidth.toFloat())
             if (right - left >= 1f && left > 0f) left.toInt() to right.toInt() else null
         }
-        val shownComments = if (candidateCommentsVisible(maxWidth.value, density.fontScale,
-            fontSize.value, commentsAllowed)) comments else emptyList()
+        val commentsShown = candidateCommentsVisible(maxWidth.value, density.fontScale, fontSize.value, commentsAllowed)
+        val shownComments = if (commentsShown) comments else emptyList()
         val all = candidates + associations
         val focused = highlightIndex.takeIf { it in candidates.indices } ?: 0
         val viewport = remember(candidates, shownComments) { CandidateStripViewport() }
         // 纠错和画出来的一样算进宽度，否则放不下的最后一个候选也算「显示了」，「下一项」移到它时被栏边切掉。
-        val correctedCandidates = LocalCorrectedCandidates.current
+        val correctedCandidates = shownCorrections(LocalCorrectedCandidates.current, commentsShown)
         val window = remember(viewport, all, candidates.size, shownComments, commentsAreGlosses, scrollable, focused, fontSize, density, measurer, inheritedTextStyle, showNumberLabels, itemSpacing, itemPadding, constraints.maxWidth, AppFonts.candidateFontFamily, AppFonts.commentFontFamily, localGap, correctedCandidates) {
             val bodyWidths = HashMap<Int, Int>()
             fun bodyWidth(index: Int): Int = bodyWidths.getOrPut(index) {
@@ -1631,17 +1721,20 @@ internal fun FixedCandidateStrip(
         if (scrollable && localGap == null) {
             ScrollableCandidateRow(candidates, all, shownComments, visuals, callbacks, fontSize, focused, showNumberLabels,
                 itemSpacing, itemPadding, visibleIndices, window.tailPadding, window.glossBodyWidthAt, window.fits, scrollKey, onUserScroll, onNearEnd,
+                corrections = correctedCandidates,
                 selectionFill = shiftDragFree && !highlightShown,
                 onFocusedBounds = { focusedBounds = it; focusedOnScreen = true },
                 onFocusedGone = { focusedOnScreen = false })
             return@BoxWithConstraints
         }
+        val showDividers = candidateDividersShown(itemSpacing, itemPadding)
+        val itemDividerColor = candidateDividerColor(visuals.textColor)
         segments.forEach { (segmentIndices, offsetPx) ->
         val segmentPx = if (offsetPx == 0 && localGap != null) localGap.first else constraints.maxWidth - offsetPx
         Row(Modifier.offset { androidx.compose.ui.unit.IntOffset(offsetPx, 0) }
             .widthIn(max = with(density) { segmentPx.toDp() }).clipToBounds(),
             horizontalArrangement = Arrangement.spacedBy(itemSpacing), verticalAlignment = Alignment.CenterVertically) {
-            segmentIndices.forEach { index ->
+            segmentIndices.forEachIndexed { position, index ->
                 // 联想按词定身份：按下后联想换了一组，手指松开不选中换上来的那个词（和展开页一样）。
                 androidx.compose.runtime.key(index, if (index < candidates.size) "" else all[index]) {
                 CandidateItem(candidateNumberedText(all[index], index, showNumberLabels && index < candidates.size), index, {
@@ -1655,9 +1748,12 @@ internal fun FixedCandidateStrip(
                     fontSize = fontSize, candidateFontFamily = AppFonts.candidateFontFamily,
                     commentFontFamily = AppFonts.commentFontFamily,
                     modifier = Modifier.testTag("bar-candidate:$index")
+                        // 分体时中缝两边各自从头排，中缝那里不画竖线。
+                        .then(if (showDividers && position > 0) Modifier.candidateLeadingDivider(itemDividerColor,
+                            itemSpacing, fontSize) else Modifier)
                         .then(if (index == focused) Modifier.onGloballyPositioned { focusedBounds = it.boundsInRoot() } else Modifier),
                     onLongClick = if (index < candidates.size) callbacks.onCandidateLongPress?.let { action -> { action(index) } } else null,
-                    correction = if (index < candidates.size) LocalCorrectedCandidates.current[all[index]].orEmpty() else "",
+                    correction = if (index < candidates.size) correctedCandidates[all[index]].orEmpty() else "",
                     selectionFill = shiftDragFree && !highlightShown, horizontalPadding = itemPadding, fit = window.fits[index])
                 }
             }
@@ -1679,11 +1775,16 @@ private fun ScrollableCandidateRow(
     callbacks: CandidateBarCallbacks, fontSize: androidx.compose.ui.unit.TextUnit, focused: Int,
     showNumberLabels: Boolean, itemSpacing: androidx.compose.ui.unit.Dp, itemPadding: androidx.compose.ui.unit.Dp,
     shown: IntRange, tailPaddingPx: Int, glossBodyWidthAt: ((Int) -> Int?)?, fits: Map<Int, CandidateFit>, scrollKey: Any?,
-    onUserScroll: (() -> Unit)?, onNearEnd: (() -> Unit)?, selectionFill: Boolean,
+    onUserScroll: (() -> Unit)?, onNearEnd: (() -> Unit)?,
+    /** 已按注释显示与否过滤过的纠错标记（注释不显示时为空）。 */
+    corrections: Map<String, String>,
+    selectionFill: Boolean,
     onFocusedBounds: (androidx.compose.ui.geometry.Rect) -> Unit,
     onFocusedGone: () -> Unit,
 ) {
     val start = shown.first.takeUnless { shown.isEmpty() } ?: 0
+    val showDividers = candidateDividersShown(itemSpacing, itemPadding)
+    val itemDividerColor = candidateDividerColor(visuals.textColor)
     // 新编码或键盘焦点换了一屏：直接从那一屏开始，不带上一次滑到的位置。
     val listState = remember(scrollKey, start) { androidx.compose.foundation.lazy.LazyListState(start) }
     var revealed by remember(listState) { mutableStateOf(false) }
@@ -1763,6 +1864,8 @@ private fun ScrollableCandidateRow(
         horizontalArrangement = Arrangement.spacedBy(itemSpacing), verticalAlignment = Alignment.CenterVertically) {
         items(all.size) { index ->
             val hidden = index in cutAtEdge
+            // 栏边藏起来的候选两边不画竖线，免得竖线孤零零挂在栏边。
+            val divided = showDividers && index > 0 && !hidden && (index - 1) !in cutAtEdge
             val numbered = index < candidates.size
             if (index == focused) DisposableEffect(Unit) { onDispose { onFocusedGone() } }
             // 选中的候选停在栏边被藏起来：选中底色也先不画。
@@ -1778,9 +1881,10 @@ private fun ScrollableCandidateRow(
                 fontSize = fontSize, candidateFontFamily = AppFonts.candidateFontFamily,
                 commentFontFamily = AppFonts.commentFontFamily,
                 modifier = if (hidden) Modifier.alpha(0f).clearAndSetSemantics {} else Modifier.testTag("bar-candidate:$index")
+                    .then(if (divided) Modifier.candidateLeadingDivider(itemDividerColor, itemSpacing, fontSize) else Modifier)
                     .then(if (index == focused) Modifier.onGloballyPositioned { onFocusedBounds(it.boundsInRoot()) } else Modifier),
                 onLongClick = if (numbered) callbacks.onCandidateLongPress?.let { action -> { action(index) } } else null,
-                correction = if (numbered) LocalCorrectedCandidates.current[all[index]].orEmpty() else "",
+                correction = if (numbered) corrections[all[index]].orEmpty() else "",
                 selectionFill = selectionFill,
                 interactive = !hidden, horizontalPadding = itemPadding, fit = fits[index])
         }
@@ -1869,6 +1973,10 @@ private fun Modifier.shiftDragOverlay(rootOrigin: () -> androidx.compose.ui.geom
 /** 候选栏两端按钮从圆开始拉长成胶囊的候选栏宽度，和拉到最宽 52dp 的宽度。 */
 private val EDGE_STRETCH_START = 940.dp
 private val EDGE_STRETCH_FULL = 1400.dp
+
+/** 空闲时收起键从「和展开键同形同位」开始过渡的候选栏宽度，和过渡到等分格胶囊的宽度。 */
+private val TOOLBAR_SLOT_BLEND_START = 600.dp
+private val TOOLBAR_SLOT_BLEND_FULL = 840.dp
 
 /**
  * 拼音里的编辑光标“|”用主题强调色加粗画，和拼音字母区分开（用户 10-21）。其余文字照旧。

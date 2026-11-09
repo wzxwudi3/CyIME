@@ -145,7 +145,11 @@ internal fun rememberImeKeyboardCallbacks(
             onCandidateDelete = { index ->
                 service.keyRouter.deleteCandidate(index)
             },
-            onAssociationSelect = { index ->
+            onAssociationSelect = select@{ index ->
+                val candidate = service.candidateState.value
+                if (service.uiState.value.inputProfile.scheme == com.kingzcheung.xime.settings.InputScheme.DOUBLE_PINYIN &&
+                    !candidate.isComposing && candidate.inputText.isEmpty() &&
+                    (service.inputCommands.hasPendingCommands || service.rimeEngine.compositionActiveForDeletion() != false)) return@select
                 service.feedbackManager.performKeyPressEffect(view = view)
                 service.keyRouter.selectAssociation(index)
             },
@@ -275,6 +279,9 @@ internal fun rememberImeKeyboardCallbacks(
             onSettings = { service.schemaController.openSettings() },
             onSettingsPage = { service.schemaController.openSettings(it) },
             onSwitchSchema = { schemaId -> if (service.inputReadiness.ticket() != null) service.schemaController.switchSchema(schemaId) },
+            onSwitchSchemaForLayout = { schemaId ->
+                if (service.inputReadiness.ticket() != null) service.schemaController.switchSchema(schemaId, stayInHandwriting = false)
+            },
             onHandwritingExpand = { expanded ->
                 com.kingzcheung.xime.ui.keyboard.HandwritingFullscreenMemory.write(service, expanded)
                 service.uiState.value = service.uiState.value.copy(handwritingExpanded = expanded)

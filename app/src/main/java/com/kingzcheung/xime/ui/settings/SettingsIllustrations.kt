@@ -428,25 +428,39 @@ private fun LegendNote(text: String) {
     Text(text, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f), maxLines = 1)
 }
 
-/** 角标输入方式三选一：键上的两个角标各用什么手势输入，长按做什么。随「反转上下滑方向」变化。 */
+/**
+ * 角标输入方式三选一：键上的两个角标各用什么手势输入，长按做什么。
+ * 随「反转上下滑方向」和「上方／下方角标提示」变化（用户 11-08）：关掉的角标键上不画，对应那一行也不列；
+ * 角标提示只管显示，手势照样能输入，这句写在卡片下面的说明里。长按输入卡不再列「→ 无」那一行。
+ */
 @Composable
-internal fun CornerInputIllustration(choice: com.kingzcheung.xime.ui.keyboard.CornerInputChoice, reversed: Boolean) {
+internal fun CornerInputIllustration(
+    choice: com.kingzcheung.xime.ui.keyboard.CornerInputChoice,
+    reversed: Boolean,
+    upHint: Boolean = true,
+    downHint: Boolean = true,
+) {
     val down = "↓下滑"
     val up = "↑上滑"
     val top = if (reversed) up else down
     val bottom = if (reversed) down else up
-    MiniKey("a", "@", "1")
+    MiniKey("a", "@".takeIf { upHint }, "1".takeIf { downHint })
     Spacer(Modifier.height(6.dp))
     Column(verticalArrangement = Arrangement.spacedBy(2.dp), horizontalAlignment = Alignment.Start) {
         when (choice) {
             com.kingzcheung.xime.ui.keyboard.CornerInputChoice.SWIPE -> {
-                GestureLine(top, "@"); GestureLine(bottom, "1"); GestureLine("长按", "无")
+                if (upHint) GestureLine(top, "@")
+                if (downHint) GestureLine(bottom, "1")
+                GestureLine("长按", "无")
             }
             com.kingzcheung.xime.ui.keyboard.CornerInputChoice.SWIPE_BUBBLE -> {
-                GestureLine(top, "@"); GestureLine(bottom, "1"); GestureLine("长按", "A á")
+                if (upHint) GestureLine(top, "@")
+                if (downHint) GestureLine(bottom, "1")
+                GestureLine("长按", "A á")
             }
             com.kingzcheung.xime.ui.keyboard.CornerInputChoice.LONG_PRESS -> {
-                GestureLine("长按", "@"); GestureLine(bottom, "1"); GestureLine(top, "无")
+                if (upHint) GestureLine("长按", "@")
+                if (downHint) GestureLine(bottom, "1")
             }
         }
     }
@@ -522,14 +536,14 @@ internal fun ClearBeforeCursorLegend(on: Boolean, reversed: Boolean) {
         after = { LegendBox("", if (on) "世界" else "") })
 }
 
-/** 退格直接删字：上屏后候选栏出了联想词，第一下退格是删字还是先收起联想。 */
+/** 退格直接删字：上屏后候选栏出了联想词，第一下退格是删字还是只去掉联想词。 */
 @Composable
 internal fun DeleteSkipsAssociationLegend(on: Boolean) {
     SettingsStepLegend("delete-skips-association-legend", "退格",
         before = { LegendBox("你好"); LegendChip("联想", "世界 朋友") },
         after = {
             LegendBox(if (on) "你" else "你好")
-            if (!on) LegendNote("只收起了联想")
+            if (!on) LegendNote("只去掉了联想词")
         })
 }
 
