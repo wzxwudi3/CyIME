@@ -1,6 +1,12 @@
 name: Signed Release APK
 
-# 自用正式签名包：用你自己的 keystore 签 v1+v2，装一次以后能一直覆盖升级、不丢词库。
+# 自用正式签名包：v1+v2 签名，装一次以后能一直覆盖升级、不丢词库。
+# 构建提速：缓存 NDK / Gradle build cache / 原生依赖
+# 每次出包更新 releases/tag/latest，固定下载链接：
+# https://github.com/wzxwudi3/CyIME/releases/download/latest/CyIME-latest.apk
+#
+# 已排除的上游缺件任务（这些下载源 404，上游没传模型/日文库，与本仓库无关）：
+#   prepareAzooKeyLibraries / prepareJapaneseDictionaries / prepareOfflineTranslateLibraries
 on:
   workflow_dispatch:
     inputs:
@@ -8,9 +14,13 @@ on:
         description: '打包内置模型（full 版，体积大很多）'
         type: boolean
         default: false
+      run_tests:
+        description: '跑单元测试（平时可关，省半分钟）'
+        type: boolean
+        default: false
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -35,14 +45,32 @@ jobs:
         with:
           packages: platform-tools
 
+      - name: Cache NDK
+        id: ndk-cache
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.ANDROID_HOME }}/ndk/29.0.14206865
+          key: ndk-${{ runner.os }}-29.0.14206865
+
       - name: Install NDK
+        if: steps.ndk-cache.outputs.cache-hit != 'true'
+        run: sdkmanager "ndk;29.0.14206865"
+
+      - name: Export NDK paths
         run: |
-          sdkmanager "ndk;29.0.14206865"
           echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> $GITHUB_ENV
           echo "ANDROID_NDK=$ANDROID_HOME/ndk/29.0.14206865" >> $GITHUB_ENV
 
       - name: Install build tools
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+
+      - name: Cache Gradle build cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.gradle/caches/build-cache-1
+          key: gradle-bc-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            gradle-bc-${{ runner.os }}-
 
       - name: Cache native deps and CMake build
         uses: actions/cache@v6
@@ -58,9 +86,8 @@ jobs:
             native-${{ runner.os }}-
 
       - name: Download native deps (ONNX Runtime)
-        run: ./gradlew downloadOnnx --no-daemon
+        run: ./gradlew downloadOnnx --no-daemon --build-cache
 
-      # 从仓库 secrets 还原签名密钥：build.gradle.kts 支持 keystore.properties 里的 keyBase64
       - name: Write keystore.properties
         env:
           KEY_BASE64: ${{ secrets.CYIME_KEY_BASE64 }}
@@ -76,12 +103,11 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run unit tests
-        run: ./gradlew :app:testDebugUnitTest --no-daemon  -x prepareAzooKeyLibraries -x prepareJapaneseDictionaries
-
+        if: ${{ inputs.run_tests }}
+        run: ./gradlew :app:testDebugUnitTest --no-daemon --build-cache -x prepareAzooKeyLibraries -x prepareJapaneseDictionaries -x prepareOfflineTranslateLibraries
 
       - name: Build signed release APKs
-        run: ./gradlew assembleRelease --no-daemon -x prepareAzooKeyLibraries -x prepareJapaneseDictionaries ${{ inputs.bundle_models && '-PbundleModels=true' || '' }}
-
+        run: ./gradlew assembleRelease --no-daemon --build-cache -x prepareAzooKeyLibraries -x prepareJapaneseDictionaries -x prepareOfflineTranslateLibraries ${{ inputs.bundle_models && '-PbundleModels=true' || '' }}
 
       - name: Verify signature (v1+v2)
         run: |
@@ -91,7 +117,23 @@ jobs:
             "$APKSIGNER" verify --print-certs "$f" || exit 1
           done
 
-      - name: Upload signed APKs
+      - name: Rename APK
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/release/*.apk out/CyIME-latest.apk
+          ls -lh out/
+
+      - name: Publish to rolling release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: 自签包（最新）
+          body: "自签 arm64-v8a 版本，每次构建自动覆盖。"
+          prerelease: true
+          files: out/CyIME-latest.apk
+          fail_on_unmatched_files: true
+
+      - name: Upload signed APKs (artifact 备份)
         uses: actions/upload-artifact@v7
         with:
           name: signed-release-apks
