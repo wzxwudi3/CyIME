@@ -221,6 +221,14 @@ internal const val CLIPBOARD_CARD_MAX_LINES_KEY = "card_max_lines"
 
 internal fun clipboardCardMaxLines(stored: Int): Int = if (stored in setOf(2, 4, 8)) stored else 4
 
+/** Preference (board prefs) for the history layout: 0 = follow width, 1..5 = fixed column count. */
+internal const val CLIPBOARD_COLUMNS_KEY = "columns"
+
+internal const val CLIPBOARD_COLUMNS_AUTO = 0
+
+internal fun clipboardColumnPreference(stored: Int): Int = if (stored in 1..5) stored else CLIPBOARD_COLUMNS_AUTO
+
+
 /**
  * Preference (board prefs): close the clipboard after a text record is put into the text. On by
  * default, as before; off keeps the clipboard (or the search's matches) open to paste several.
@@ -387,7 +395,8 @@ internal fun ClipboardBoardView(
             // The source rectangles are opening-time snapshots. Resizing must not reuse stale anchors.
             menu = false; itemMenu = null; groupMenu = null; deleting = null
         }
-        val columns = clipboardColumnCount(maxWidth.value)
+        val columns = clipboardColumnCount(maxWidth.value,clipboardColumnPreference(prefs.getInt(CLIPBOARD_COLUMNS_KEY, CLIPBOARD_COLUMNS_AUTO)))
+
         val compactControls = maxWidth.value / LocalDensity.current.fontScale < 360f
         val content = remember(cards, pins, columns, pinsExpanded) {
             clipboardBoardContent(cards, pins, columns, pinsExpanded)
