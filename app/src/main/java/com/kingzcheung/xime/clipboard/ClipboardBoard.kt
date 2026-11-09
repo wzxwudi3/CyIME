@@ -61,7 +61,10 @@ internal fun legacyClipboardTextPinIds(storedPins: Set<String>): Set<Long> = sto
     .filter { it.startsWith("text:") }.mapNotNull { it.removePrefix("text:").toLongOrNull() }
     .filter { it > 0 }.toSet()
 
-internal fun clipboardColumnCount(widthDp: Float): Int = (widthDp / 160f).toInt().coerceIn(1, 5)
+/** [forced] comes from the board preference: 1..5 pins the layout, 0 keeps the width-based default. */
+internal fun clipboardColumnCount(widthDp: Float, forced: Int = 0): Int =
+    if (forced in 1..5) forced else (widthDp / 160f).toInt().coerceIn(1, 5)
+
 
 // Keep the existing placeholder shape for the whole thumbnail lifetime. Decoding
 // must not change masonry geometry as more images enter the viewport.
