@@ -99,3 +99,8 @@ hs_err_pid*.log
 /tools/handwriting_training/finetune_ochwpro.py
 /tools/handwriting_training/fewshot_eval.py
 /tools/handwriting_training/read_samples.py
+
+# Codespaces 本地化产物
+app/keystore.properties
+/.android-sdk/
+/out/
