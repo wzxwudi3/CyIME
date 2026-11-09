@@ -107,6 +107,19 @@ internal fun ConnectedClipboardBoard(
     // Older history is read page by page while open; closing returns to the first page.
     DisposableEffect(manager) { onDispose { manager.resetHistoryWindow() } }
     val cardMaxLines = remember(prefs) { clipboardCardMaxLines(prefs.getInt(CLIPBOARD_CARD_MAX_LINES_KEY, 4)) }
+    // 剪贴板排布：0 跟随面板宽度，1..5 固定列数。设置页改了立刻生效，不用重启键盘。
+    var columnPreference by remember(prefs) {
+        mutableStateOf(clipboardColumnPreference(prefs.getInt(CLIPBOARD_COLUMNS_KEY, CLIPBOARD_COLUMNS_AUTO)))
+    }
+    DisposableEffect(prefs) {
+        val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { changed, key ->
+            if (key == CLIPBOARD_COLUMNS_KEY) {
+                columnPreference = clipboardColumnPreference(changed.getInt(key, CLIPBOARD_COLUMNS_AUTO))
+            }
+        }
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { prefs.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
     var closeAfterPaste by remember(prefs) { mutableStateOf(clipboardClosesAfterPaste(prefs)) }
     // A search submitted from the keyboard search bar shows only its matches (fixed records too).
     val boardQuery by manager.boardQuery.collectAsState()
@@ -178,7 +191,7 @@ internal fun ConnectedClipboardBoard(
             // Clearing means all unfixed history in the database, not only the pages read so far.
             manager.clearAll()
             store.removeImages(images.filterIsInstance<ClipboardCard.Image>().map { it.item.uri }.toSet())
-        }, cardMaxLines = cardMaxLines,
+        }, cardMaxLines = cardMaxLines, columnPreference = columnPreference,
         searchQuery = (liveQuery?.display ?: boardQuery).takeIf { it.isNotBlank() },
         onClearSearch = { manager.boardQuery.value = "" }, searchChip = liveQuery == null,
         onOpenSearch = onOpenSearch, full = room.full, showControls = showControls,
@@ -262,6 +275,8 @@ internal fun ClipboardBoardView(
     /** Clears all unfixed history; receives the unfixed images to remove. Null deletes [textItems] only. */
     onClearUnpinned: ((List<ClipboardCard>) -> Unit)? = null,
     cardMaxLines: Int = 4,
+    /** 0 跟随宽度，1..5 固定列数（设置页「排布方式」）。 */
+    columnPreference: Int = CLIPBOARD_COLUMNS_AUTO,
     /** The search shown in the board, or null; its chip clears it. */
     searchQuery: String? = null,
     onClearSearch: () -> Unit = {},
@@ -395,7 +410,7 @@ internal fun ClipboardBoardView(
             // The source rectangles are opening-time snapshots. Resizing must not reuse stale anchors.
             menu = false; itemMenu = null; groupMenu = null; deleting = null
         }
-        val columns = clipboardColumnCount(maxWidth.value,clipboardColumnPreference(prefs.getInt(CLIPBOARD_COLUMNS_KEY, CLIPBOARD_COLUMNS_AUTO)))
+        val columns = clipboardColumnCount(maxWidth.value, columnPreference)
 
         val compactControls = maxWidth.value / LocalDensity.current.fontScale < 360f
         val content = remember(cards, pins, columns, pinsExpanded) {
