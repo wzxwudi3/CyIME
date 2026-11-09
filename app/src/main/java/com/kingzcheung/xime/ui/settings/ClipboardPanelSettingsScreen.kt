@@ -46,6 +46,9 @@ import com.kingzcheung.xime.clipboard.ImageAccessActivity
 import com.kingzcheung.xime.settings.PerformanceCosts
 import com.kingzcheung.xime.ui.menubar.CLIPBOARD_CARD_MAX_LINES_KEY
 import com.kingzcheung.xime.ui.menubar.CLIPBOARD_CLOSE_AFTER_PASTE_KEY
+import com.kingzcheung.xime.ui.menubar.CLIPBOARD_COLUMNS_AUTO
+import com.kingzcheung.xime.ui.menubar.CLIPBOARD_COLUMNS_KEY
+import com.kingzcheung.xime.ui.menubar.clipboardColumnPreference
 import com.kingzcheung.xime.ui.menubar.clipboardCardMaxLines
 import com.kingzcheung.xime.ui.menubar.clipboardClosesAfterPaste
 
@@ -118,6 +121,25 @@ private fun ClipboardPanelDisplaySettings(onNavigateToGroups: () -> Unit) {
                     RadioButton(selected = lines == option, onClick = null)
                     Spacer(Modifier.width(12.dp))
                     Text("$option 行", style = MaterialTheme.typography.titleSmall)
+                }
+            }
+        }
+                Column(Modifier.settingsSearchAnchor("排布方式").fillMaxWidth().padding(16.dp)) {
+            var columns by remember {
+                mutableStateOf(clipboardColumnPreference(prefs.getInt(CLIPBOARD_COLUMNS_KEY, CLIPBOARD_COLUMNS_AUTO)))
+            }
+            Text("排布方式", style = MaterialTheme.typography.titleSmall)
+            Text("单列每条占满整行，双列更紧凑", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+            listOf(CLIPBOARD_COLUMNS_AUTO to "自动", 1 to "单列", 2 to "双列").forEach { (option, label) ->
+                Row(Modifier.fillMaxWidth().testTag("clipboard-columns:$option")
+                    .selectable(columns == option, role = Role.RadioButton) {
+                        columns = option
+                        prefs.edit().putInt(CLIPBOARD_COLUMNS_KEY, option).apply()
+                    }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = columns == option, onClick = null)
+                    Spacer(Modifier.width(12.dp))
+                    Text(label, style = MaterialTheme.typography.titleSmall)
                 }
             }
         }
